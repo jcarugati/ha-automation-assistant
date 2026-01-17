@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automation Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Automation Assistant</h1>
+            <p class="subtitle">Create automations using natural language</p>
+        </header>
+
+        <div class="context-bar">
+            <button id="showContextBtn" class="btn btn-secondary">Show Context</button>
+            <span id="contextSummary" class="context-summary"></span>
+        </div>
+
+        <main>
+            <div class="input-section">
+                <label for="promptInput">Describe your automation:</label>
+                <textarea
+                    id="promptInput"
+                    placeholder="e.g., Turn on the living room lights when motion is detected after sunset"
+                    rows="4"
+                ></textarea>
+                <button id="generateBtn" class="btn btn-primary">Generate Automation</button>
+            </div>
+
+            <div id="loadingIndicator" class="loading hidden">
+                <div class="spinner"></div>
+                <span>Generating automation...</span>
+            </div>
+
+            <div id="errorMessage" class="error hidden"></div>
+
+            <div id="resultSection" class="result-section hidden">
+                <div class="explanation-section">
+                    <h3>Explanation</h3>
+                    <div id="explanation" class="explanation"></div>
+                </div>
+
+                <div class="yaml-section">
+                    <div class="yaml-header">
+                        <h3>Generated YAML</h3>
+                        <div class="yaml-actions">
+                            <button id="validateBtn" class="btn btn-small">Validate</button>
+                            <button id="copyBtn" class="btn btn-small">Copy</button>
+                        </div>
+                    </div>
+                    <pre id="yamlOutput" class="yaml-output"><code></code></pre>
+                    <div id="validationResult" class="validation-result hidden"></div>
+                </div>
+            </div>
+        </main>
+
+        <div id="contextModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Home Assistant Context</h2>
+                    <button id="closeModalBtn" class="close-btn">&times;</button>
+                </div>
+                <div id="contextDetails" class="modal-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

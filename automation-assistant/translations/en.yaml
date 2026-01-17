@@ -1,0 +1,10 @@
+configuration:
+  claude_api_key:
+    name: Claude API Key
+    description: Your Anthropic Claude API key for automation generation.
+  model:
+    name: Model
+    description: The Claude model to use (e.g., claude-sonnet-4-20250514, claude-3-opus-20240229).
+  log_level:
+    name: Log Level
+    description: Logging verbosity level.
