@@ -1,9 +1,6 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install Python and pip
-RUN apk add --no-cache python3 py3-pip
-
 # Set working directory
 WORKDIR /app
 
@@ -11,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
