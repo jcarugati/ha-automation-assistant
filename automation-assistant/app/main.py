@@ -10,11 +10,16 @@ from fastapi.staticfiles import StaticFiles
 
 from .automation import automation_generator, validate_automation_yaml
 from .config import config
+from .doctor import automation_doctor
 from .ha_client import ha_client
 from .models import (
     AutomationRequest,
     AutomationResponse,
     ContextSummary,
+    DiagnoseRequest,
+    DiagnosisResponse,
+    HAAutomationList,
+    HAAutomationSummary,
     HealthResponse,
     SaveAutomationRequest,
     SavedAutomation,
@@ -165,3 +170,52 @@ async def delete_automation(automation_id: str):
         raise HTTPException(status_code=404, detail="Automation not found")
     logger.info(f"Deleted automation: {automation_id}")
     return {"success": True}
+
+
+# Doctor endpoints
+
+@app.get("/api/ha-automations", response_model=HAAutomationList)
+async def list_ha_automations():
+    """List all automations from Home Assistant."""
+    try:
+        automations = await automation_doctor.list_automations()
+        return HAAutomationList(
+            automations=[HAAutomationSummary(**a) for a in automations],
+            count=len(automations),
+        )
+    except Exception as e:
+        logger.error(f"Failed to list HA automations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ha-automations/{automation_id}")
+async def get_ha_automation(automation_id: str):
+    """Get a Home Assistant automation with its traces."""
+    try:
+        details = await automation_doctor.get_automation_details(automation_id)
+        if not details.get("automation"):
+            raise HTTPException(status_code=404, detail="Automation not found")
+        return details
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get HA automation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/doctor/diagnose", response_model=DiagnosisResponse)
+async def diagnose_automation(request: DiagnoseRequest):
+    """Diagnose an automation and provide analysis."""
+    if not config.is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Claude API key not configured. Please configure in add-on settings.",
+        )
+
+    logger.info(f"Diagnosing automation: {request.automation_id}")
+    result = await automation_doctor.diagnose(request.automation_id)
+
+    if not result.success:
+        logger.error(f"Diagnosis failed: {result.error}")
+
+    return result

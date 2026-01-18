@@ -92,3 +92,39 @@ class SavedAutomationList(BaseModel):
 
     automations: list[SavedAutomation] = Field(default_factory=list, description="List of saved automations")
     count: int = Field(..., description="Total count of saved automations")
+
+
+# Doctor feature models
+
+class HAAutomationSummary(BaseModel):
+    """Summary of a Home Assistant automation."""
+
+    id: str = Field(..., description="Automation ID")
+    alias: str = Field(..., description="Automation alias/name")
+    description: str | None = Field(None, description="Automation description")
+    mode: str | None = Field(None, description="Automation mode")
+
+
+class HAAutomationList(BaseModel):
+    """List of Home Assistant automations."""
+
+    automations: list[HAAutomationSummary] = Field(default_factory=list)
+    count: int = Field(..., description="Total count")
+
+
+class DiagnoseRequest(BaseModel):
+    """Request model for diagnosing an automation."""
+
+    automation_id: str = Field(..., min_length=1, description="ID of the automation to diagnose")
+
+
+class DiagnosisResponse(BaseModel):
+    """Response model for automation diagnosis."""
+
+    automation_id: str = Field(..., description="ID of the diagnosed automation")
+    automation_alias: str = Field(..., description="Alias/name of the automation")
+    automation_yaml: str = Field(..., description="Full YAML of the automation")
+    traces_summary: list[dict[str, Any]] = Field(default_factory=list, description="Recent execution traces")
+    analysis: str = Field(..., description="Claude's analysis and recommendations")
+    success: bool = Field(..., description="Whether diagnosis was successful")
+    error: str | None = Field(None, description="Error message if diagnosis failed")
