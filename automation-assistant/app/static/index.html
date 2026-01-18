@@ -1150,11 +1150,23 @@
         }
 
         function parseMarkdown(text) {
-            // Escape HTML first
-            let html = text
+            // Extract code blocks first and replace with placeholders
+            const codeBlocks = [];
+            let html = text.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+                const placeholder = `__CODEBLOCK_${codeBlocks.length}__`;
+                codeBlocks.push(code.trim());
+                return placeholder;
+            });
+
+            // Escape HTML
+            html = html
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
+
+            // Headers: ## text
+            html = html.replace(/^### (.+)$/gm, '<h4 style="font-size: 14px; font-weight: 600; margin: 16px 0 8px 0; color: var(--text-primary);">$1</h4>');
+            html = html.replace(/^## (.+)$/gm, '<h3 style="font-size: 15px; font-weight: 600; margin: 20px 0 10px 0; color: var(--text-primary);">$1</h3>');
 
             // Bold: **text**
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -1164,6 +1176,18 @@
 
             // Convert newlines to <br> for proper line breaks
             html = html.replace(/\n/g, '<br>');
+
+            // Restore code blocks
+            codeBlocks.forEach((code, i) => {
+                const escapedCode = code
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                html = html.replace(
+                    `__CODEBLOCK_${i}__`,
+                    `<pre style="background: var(--code-bg); padding: 16px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 13px; line-height: 1.5; margin: 12px 0; border: 1px solid var(--border-color);"><code>${escapedCode}</code></pre>`
+                );
+            });
 
             return html;
         }
