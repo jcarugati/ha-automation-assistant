@@ -125,7 +125,11 @@ class HAClient:
         return await self._websocket_command("config/entity_registry/list")
 
     async def get_full_context(self) -> dict[str, Any]:
-        """Fetch all context data from Home Assistant."""
+        """Fetch all context data from Home Assistant.
+
+        Filters out unavailable/disabled entities and devices to ensure
+        only active resources are included in the context.
+        """
         # Run all requests concurrently
         states, services, ha_config, devices, areas, entities = await asyncio.gather(
             self.get_states(),
@@ -157,13 +161,48 @@ class HAClient:
             logger.error(f"Failed to get entity registry: {entities}")
             entities = []
 
+        # Filter out unavailable/unknown states
+        unavailable_states = {"unavailable", "unknown"}
+        active_states = [
+            s for s in states
+            if s.get("state", "").lower() not in unavailable_states
+        ]
+        logger.debug(f"Filtered states: {len(states)} -> {len(active_states)} (removed unavailable/unknown)")
+
+        # Get set of disabled entity IDs from registry
+        disabled_entity_ids = {
+            e.get("entity_id")
+            for e in entities
+            if e.get("disabled_by") is not None
+        }
+
+        # Further filter states to remove disabled entities
+        active_states = [
+            s for s in active_states
+            if s.get("entity_id") not in disabled_entity_ids
+        ]
+        logger.debug(f"After removing disabled entities: {len(active_states)}")
+
+        # Filter out disabled devices
+        active_devices = [
+            d for d in devices
+            if d.get("disabled_by") is None
+        ]
+        logger.debug(f"Filtered devices: {len(devices)} -> {len(active_devices)} (removed disabled)")
+
+        # Filter entity registry to only include enabled entities
+        active_entities = [
+            e for e in entities
+            if e.get("disabled_by") is None
+        ]
+
         return {
-            "states": states,
+            "states": active_states,
             "services": services,
             "config": ha_config,
-            "devices": devices,
+            "devices": active_devices,
             "areas": areas,
-            "entity_registry": entities,
+            "entity_registry": active_entities,
         }
 
 
