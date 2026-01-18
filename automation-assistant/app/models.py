@@ -80,6 +80,13 @@ class SaveAutomationRequest(BaseModel):
     yaml_content: str = Field(..., min_length=1, description="YAML content to save")
 
 
+class UpdateAutomationRequest(BaseModel):
+    """Request model for updating an automation."""
+
+    prompt: str = Field(..., min_length=1, description="Updated prompt")
+    yaml_content: str = Field(..., min_length=1, description="Updated YAML content")
+
+
 class SavedAutomationList(BaseModel):
     """Response model for list of saved automations."""
 

@@ -90,6 +90,18 @@ class StorageManager:
                 return True
             return False
 
+    async def update(self, automation_id: str, prompt: str, yaml_content: str) -> dict[str, Any] | None:
+        """Update an existing automation."""
+        async with self._lock:
+            data = self._load_data()
+            for automation in data.get("automations", []):
+                if automation.get("id") == automation_id:
+                    automation["prompt"] = prompt
+                    automation["yaml_content"] = yaml_content
+                    self._save_data(data)
+                    return automation
+            return None
+
 
 # Global instance
 storage_manager = StorageManager()

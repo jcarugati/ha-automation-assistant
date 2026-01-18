@@ -850,6 +850,8 @@
 
         let currentYaml = '';
         let currentPrompt = '';
+        let currentAutomationId = null;
+        let currentAutomationName = null;
         let deleteAutomationId = null;
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -880,15 +882,15 @@
             sidebarOverlay.addEventListener('click', closeSidebarHandler);
 
             // Save modal
-            saveBtn.addEventListener('click', openSaveModal);
+            saveBtn.addEventListener('click', handleSave);
             closeSaveModalBtn.addEventListener('click', closeSaveModal);
             cancelSaveBtn.addEventListener('click', closeSaveModal);
-            confirmSaveBtn.addEventListener('click', saveAutomation);
+            confirmSaveBtn.addEventListener('click', createNewAutomation);
             saveModal.addEventListener('click', (e) => {
                 if (e.target === saveModal) closeSaveModal();
             });
             automationNameInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') saveAutomation();
+                if (e.key === 'Enter') createNewAutomation();
             });
 
             // Delete modal
@@ -995,6 +997,8 @@
                     promptInput.value = automation.prompt;
                     currentPrompt = automation.prompt;
                     currentYaml = automation.yaml_content;
+                    currentAutomationId = automation.id;
+                    currentAutomationName = automation.name;
                     yamlOutput.textContent = currentYaml;
                     explanation.textContent = 'Loaded from saved automation: ' + automation.name;
                     resultSection.classList.remove('hidden');
@@ -1006,7 +1010,15 @@
             }
         }
 
-        // Save modal functions
+        // Save functions
+        function handleSave() {
+            if (currentAutomationId) {
+                updateExistingAutomation();
+            } else {
+                openSaveModal();
+            }
+        }
+
         function openSaveModal() {
             automationNameInput.value = '';
             saveModal.classList.remove('hidden');
@@ -1017,7 +1029,36 @@
             saveModal.classList.add('hidden');
         }
 
-        async function saveAutomation() {
+        async function updateExistingAutomation() {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch(`./api/automations/${currentAutomationId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: currentPrompt || promptInput.value.trim(),
+                        yaml_content: currentYaml
+                    }),
+                });
+
+                if (response.ok) {
+                    await loadSavedAutomations();
+                    showSuccess(`"${currentAutomationName}" updated successfully!`);
+                } else {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to update');
+                }
+            } catch (error) {
+                showError('Failed to update automation: ' + error.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+            }
+        }
+
+        async function createNewAutomation() {
             const name = automationNameInput.value.trim();
             if (!name) {
                 automationNameInput.focus();
@@ -1039,6 +1080,9 @@
                 });
 
                 if (response.ok) {
+                    const automation = await response.json();
+                    currentAutomationId = automation.id;
+                    currentAutomationName = automation.name;
                     closeSaveModal();
                     await loadSavedAutomations();
                     showSuccess('Automation saved successfully!');

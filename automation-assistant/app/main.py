@@ -19,6 +19,7 @@ from .models import (
     SaveAutomationRequest,
     SavedAutomation,
     SavedAutomationList,
+    UpdateAutomationRequest,
     ValidationRequest,
     ValidationResponse,
 )
@@ -139,6 +140,20 @@ async def get_automation(automation_id: str):
     automation = await storage_manager.get(automation_id)
     if not automation:
         raise HTTPException(status_code=404, detail="Automation not found")
+    return SavedAutomation(**automation)
+
+
+@app.put("/api/automations/{automation_id}", response_model=SavedAutomation)
+async def update_automation(automation_id: str, request: UpdateAutomationRequest):
+    """Update an existing automation."""
+    automation = await storage_manager.update(
+        automation_id=automation_id,
+        prompt=request.prompt,
+        yaml_content=request.yaml_content,
+    )
+    if not automation:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    logger.info(f"Updated automation: {automation_id}")
     return SavedAutomation(**automation)
 
 
