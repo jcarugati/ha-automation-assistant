@@ -621,15 +621,42 @@
         function copyYaml() {
             if (!currentYaml) return;
 
-            navigator.clipboard.writeText(currentYaml).then(() => {
-                const originalText = copyBtn.textContent;
-                copyBtn.textContent = 'Copied!';
-                setTimeout(() => {
-                    copyBtn.textContent = originalText;
-                }, 2000);
-            }).catch(err => {
+            // Try modern clipboard API first, fall back to execCommand for HTTP
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(currentYaml).then(() => {
+                    showCopySuccess();
+                }).catch(() => {
+                    fallbackCopy();
+                });
+            } else {
+                fallbackCopy();
+            }
+        }
+
+        function fallbackCopy() {
+            const textArea = document.createElement('textarea');
+            textArea.value = currentYaml;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showCopySuccess();
+            } catch (err) {
                 showError('Failed to copy to clipboard');
-            });
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function showCopySuccess() {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 2000);
         }
 
         async function showContext() {
