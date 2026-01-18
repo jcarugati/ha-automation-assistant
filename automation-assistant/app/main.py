@@ -16,9 +16,13 @@ from .models import (
     AutomationResponse,
     ContextSummary,
     HealthResponse,
+    SaveAutomationRequest,
+    SavedAutomation,
+    SavedAutomationList,
     ValidationRequest,
     ValidationResponse,
 )
+from .storage import storage_manager
 
 # Configure logging
 log_level = getattr(logging, config.log_level.upper(), logging.INFO)
@@ -104,3 +108,45 @@ async def get_context():
 async def validate_yaml(request: ValidationRequest):
     """Validate automation YAML syntax."""
     return validate_automation_yaml(request.yaml_content)
+
+
+@app.get("/api/automations", response_model=SavedAutomationList)
+async def list_automations():
+    """List all saved automations."""
+    automations = await storage_manager.list()
+    return SavedAutomationList(automations=automations, count=len(automations))
+
+
+@app.post("/api/automations", response_model=SavedAutomation)
+async def save_automation(request: SaveAutomationRequest):
+    """Save a new automation."""
+    try:
+        automation = await storage_manager.save(
+            name=request.name,
+            prompt=request.prompt,
+            yaml_content=request.yaml_content,
+        )
+        logger.info(f"Saved automation: {request.name}")
+        return SavedAutomation(**automation)
+    except Exception as e:
+        logger.error(f"Failed to save automation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/automations/{automation_id}", response_model=SavedAutomation)
+async def get_automation(automation_id: str):
+    """Get a specific saved automation."""
+    automation = await storage_manager.get(automation_id)
+    if not automation:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    return SavedAutomation(**automation)
+
+
+@app.delete("/api/automations/{automation_id}")
+async def delete_automation(automation_id: str):
+    """Delete a saved automation."""
+    deleted = await storage_manager.delete(automation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    logger.info(f"Deleted automation: {automation_id}")
+    return {"success": True}

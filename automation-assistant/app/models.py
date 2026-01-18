@@ -1,5 +1,6 @@
 """Pydantic models for the API."""
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -59,3 +60,28 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Health status")
     configured: bool = Field(..., description="Whether API key is configured")
+
+
+class SavedAutomation(BaseModel):
+    """Model for a saved automation."""
+
+    id: str = Field(..., description="Unique identifier")
+    name: str = Field(..., description="User-provided name")
+    prompt: str = Field(..., description="Original user request")
+    yaml_content: str = Field(..., description="Generated YAML content")
+    created_at: datetime = Field(..., description="Creation timestamp")
+
+
+class SaveAutomationRequest(BaseModel):
+    """Request model for saving an automation."""
+
+    name: str = Field(..., min_length=1, max_length=100, description="Name for the automation")
+    prompt: str = Field(..., min_length=1, description="Original prompt")
+    yaml_content: str = Field(..., min_length=1, description="YAML content to save")
+
+
+class SavedAutomationList(BaseModel):
+    """Response model for list of saved automations."""
+
+    automations: list[SavedAutomation] = Field(default_factory=list, description="List of saved automations")
+    count: int = Field(..., description="Total count of saved automations")
