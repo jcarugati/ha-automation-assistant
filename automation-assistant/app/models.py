@@ -128,3 +128,92 @@ class DiagnosisResponse(BaseModel):
     analysis: str = Field(..., description="Claude's analysis and recommendations")
     success: bool = Field(..., description="Whether diagnosis was successful")
     error: str | None = Field(None, description="Error message if diagnosis failed")
+
+
+# Batch diagnosis models
+
+
+class AutomationConflict(BaseModel):
+    """Detected conflict between automations."""
+
+    conflict_type: str = Field(..., description="Type: shared_trigger, state_conflict, resource_contention, timing_race, circular_dependency")
+    severity: str = Field(..., description="Severity: info, warning, critical")
+    automation_ids: list[str] = Field(default_factory=list, description="IDs of automations involved")
+    automation_names: list[str] = Field(default_factory=list, description="Names of automations involved")
+    description: str = Field(..., description="Description of the conflict")
+    affected_entities: list[str] = Field(default_factory=list, description="Entities affected by the conflict")
+
+
+class AutomationDiagnosisSummary(BaseModel):
+    """Summary of single automation diagnosis."""
+
+    automation_id: str = Field(..., description="Automation ID")
+    automation_alias: str = Field(..., description="Automation alias/name")
+    has_errors: bool = Field(..., description="Whether errors were found")
+    error_count: int = Field(0, description="Number of errors")
+    warning_count: int = Field(0, description="Number of warnings")
+    brief_summary: str = Field("", description="Brief summary of status")
+
+
+class Insight(BaseModel):
+    """Actionable insight from diagnosis."""
+
+    insight_id: str = Field(..., description="Unique ID for deduplication")
+    category: str = Field(..., description="Category: single or multi")
+    insight_type: str = Field(..., description="Type: error, warning, conflict, best_practice")
+    severity: str = Field(..., description="Severity: info, warning, critical")
+    title: str = Field(..., description="Short title")
+    description: str = Field(..., description="Detailed description")
+    automation_ids: list[str] = Field(default_factory=list, description="Affected automation IDs")
+    automation_names: list[str] = Field(default_factory=list, description="Affected automation names")
+    affected_entities: list[str] = Field(default_factory=list, description="Affected entities")
+    recommendation: str = Field("", description="Suggested fix")
+    first_seen: datetime = Field(..., description="When first detected")
+    last_seen: datetime = Field(..., description="Last time detected")
+    resolved: bool = Field(False, description="User marked as resolved")
+
+
+class InsightsList(BaseModel):
+    """Response for insights list."""
+
+    single_automation: list[Insight] = Field(default_factory=list, description="Single automation issues")
+    multi_automation: list[Insight] = Field(default_factory=list, description="Multi-automation conflicts")
+    total_count: int = Field(0, description="Total insight count")
+    unresolved_count: int = Field(0, description="Unresolved insight count")
+
+
+class BatchDiagnosisReport(BaseModel):
+    """Full batch diagnosis report."""
+
+    run_id: str = Field(..., description="Unique run identifier")
+    run_at: datetime = Field(..., description="When the diagnosis ran")
+    scheduled: bool = Field(False, description="Whether this was a scheduled run")
+    total_automations: int = Field(0, description="Total automations found")
+    automations_analyzed: int = Field(0, description="Automations successfully analyzed")
+    automations_with_errors: int = Field(0, description="Automations with issues")
+    conflicts_found: int = Field(0, description="Number of conflicts detected")
+    insights_added: int = Field(0, description="New insights added this run")
+    automation_summaries: list[AutomationDiagnosisSummary] = Field(default_factory=list)
+    conflicts: list[AutomationConflict] = Field(default_factory=list)
+    overall_summary: str = Field("", description="Overall summary from Claude")
+    full_analyses: list[DiagnosisResponse] = Field(default_factory=list, description="Detailed per-automation analyses")
+
+
+class BatchReportSummary(BaseModel):
+    """Summary for listing reports."""
+
+    run_id: str = Field(..., description="Unique run identifier")
+    run_at: datetime = Field(..., description="When the diagnosis ran")
+    scheduled: bool = Field(False, description="Whether this was a scheduled run")
+    total_automations: int = Field(0, description="Total automations found")
+    automations_with_errors: int = Field(0, description="Automations with issues")
+    conflicts_found: int = Field(0, description="Number of conflicts detected")
+    insights_added: int = Field(0, description="New insights added this run")
+
+
+class ScheduleConfig(BaseModel):
+    """Schedule configuration."""
+
+    enabled: bool = Field(True, description="Whether scheduling is enabled")
+    time: str = Field("03:00", description="Time to run daily (HH:MM format)")
+    next_run: datetime | None = Field(None, description="Next scheduled run time")

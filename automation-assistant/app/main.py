@@ -4,30 +4,40 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .automation import automation_generator, validate_automation_yaml
+from .batch_doctor import batch_diagnosis_service
 from .config import config
+from .diagnostic_storage import diagnostic_storage
 from .doctor import automation_doctor
 from .ha_client import ha_client
+from .insights_storage import insights_storage
 from .models import (
     AutomationRequest,
     AutomationResponse,
+    BatchDiagnosisReport,
+    BatchReportSummary,
     ContextSummary,
     DiagnoseRequest,
     DiagnosisResponse,
     HAAutomationList,
     HAAutomationSummary,
     HealthResponse,
+    Insight,
+    InsightsList,
     SaveAutomationRequest,
     SavedAutomation,
     SavedAutomationList,
+    ScheduleConfig,
     UpdateAutomationRequest,
     ValidationRequest,
     ValidationResponse,
 )
+from .scheduler import diagnosis_scheduler
 from .storage import storage_manager
 
 # Configure logging
@@ -45,8 +55,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Automation Assistant")
     logger.info(f"Using model: {config.model}")
     logger.info(f"API key configured: {config.is_configured}")
+
+    # Start the diagnosis scheduler
+    diagnosis_scheduler.start()
+    logger.info("Diagnosis scheduler started")
+
     yield
+
     # Cleanup
+    diagnosis_scheduler.stop()
     await ha_client.close()
     logger.info("Automation Assistant stopped")
 
@@ -219,3 +236,171 @@ async def diagnose_automation(request: DiagnoseRequest):
         logger.error(f"Diagnosis failed: {result.error}")
 
     return result
+
+
+# Batch diagnosis endpoints
+
+
+@app.post("/api/doctor/run-batch", response_model=BatchDiagnosisReport)
+async def run_batch_diagnosis():
+    """Manually trigger batch diagnosis of all automations."""
+    if not config.is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Claude API key not configured. Please configure in add-on settings.",
+        )
+
+    logger.info("Manual batch diagnosis triggered")
+    try:
+        result = await batch_diagnosis_service.run_batch_diagnosis(scheduled=False)
+        return result
+    except Exception as e:
+        logger.error(f"Batch diagnosis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/doctor/reports")
+async def list_diagnosis_reports():
+    """List all diagnosis reports (summaries only)."""
+    try:
+        reports = await diagnostic_storage.list_reports()
+        return {"reports": reports, "count": len(reports)}
+    except Exception as e:
+        logger.error(f"Failed to list reports: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/doctor/reports/latest")
+async def get_latest_report():
+    """Get the most recent full diagnosis report."""
+    try:
+        report = await diagnostic_storage.get_latest_report()
+        if not report:
+            raise HTTPException(status_code=404, detail="No diagnosis reports found")
+        return report
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get latest report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/doctor/reports/{run_id}")
+async def get_report(run_id: str):
+    """Get a specific diagnosis report by run ID."""
+    try:
+        report = await diagnostic_storage.get_report(run_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return report
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get report {run_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Schedule endpoints
+
+
+@app.get("/api/doctor/schedule", response_model=ScheduleConfig)
+async def get_schedule():
+    """Get current schedule configuration."""
+    config_data = diagnosis_scheduler.get_schedule()
+    return ScheduleConfig(**config_data)
+
+
+class ScheduleUpdateRequest(BaseModel):
+    """Request model for updating schedule."""
+    time: str | None = None
+    enabled: bool | None = None
+
+
+@app.put("/api/doctor/schedule", response_model=ScheduleConfig)
+async def update_schedule(request: ScheduleUpdateRequest):
+    """Update scheduled run time and/or enabled status."""
+    try:
+        config_data = diagnosis_scheduler.update_schedule(
+            time=request.time,
+            enabled=request.enabled,
+        )
+        return ScheduleConfig(**config_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to update schedule: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Insights endpoints
+
+
+@app.get("/api/doctor/insights", response_model=InsightsList)
+async def get_insights():
+    """Get all insights, separated by category (single/multi)."""
+    try:
+        single = await insights_storage.get_single_automation_insights()
+        multi = await insights_storage.get_multi_automation_insights()
+        unresolved = await insights_storage.get_unresolved_count()
+
+        return InsightsList(
+            single_automation=[Insight(**i) for i in single],
+            multi_automation=[Insight(**i) for i in multi],
+            total_count=len(single) + len(multi),
+            unresolved_count=unresolved,
+        )
+    except Exception as e:
+        logger.error(f"Failed to get insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/doctor/insights/single")
+async def get_single_insights():
+    """Get insights for single automation issues."""
+    try:
+        insights = await insights_storage.get_single_automation_insights()
+        return {"insights": insights, "count": len(insights)}
+    except Exception as e:
+        logger.error(f"Failed to get single insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/doctor/insights/multi")
+async def get_multi_insights():
+    """Get insights for multi-automation conflicts."""
+    try:
+        insights = await insights_storage.get_multi_automation_insights()
+        return {"insights": insights, "count": len(insights)}
+    except Exception as e:
+        logger.error(f"Failed to get multi insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/doctor/insights/{insight_id}/resolve")
+async def resolve_insight(insight_id: str, resolved: bool = Query(True)):
+    """Mark an insight as resolved or unresolved."""
+    try:
+        success = await insights_storage.mark_resolved(insight_id, resolved)
+        if not success:
+            raise HTTPException(status_code=404, detail="Insight not found")
+        return {"success": True, "insight_id": insight_id, "resolved": resolved}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to resolve insight {insight_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/doctor/insights/{insight_id}")
+async def delete_insight(insight_id: str):
+    """Delete an insight permanently."""
+    try:
+        success = await insights_storage.delete_insight(insight_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Insight not found")
+        return {"success": True, "insight_id": insight_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete insight {insight_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
