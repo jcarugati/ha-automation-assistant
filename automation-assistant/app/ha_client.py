@@ -84,6 +84,7 @@ class HAClient:
             async with websockets.connect(
                 ws_url,
                 additional_headers={"Authorization": f"Bearer {self.token}"},
+                max_size=10 * 1024 * 1024,  # 10MB limit for large entity registries
             ) as ws:
                 # Wait for auth_required message
                 auth_required = await asyncio.wait_for(ws.recv(), timeout=10)

@@ -1,16 +1,13 @@
-"""Batch Diagnosis Service - runs diagnosis on all automations and detects conflicts."""
+"""Batch Diagnosis Service - analyzes all automations in a single Claude call."""
 
+import json
 import logging
 import re
 import uuid
-from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-import yaml
-
 from .diagnostic_storage import diagnostic_storage
-from .doctor import automation_doctor
 from .ha_automations import ha_automation_reader
 from .ha_client import ha_client
 from .insights_storage import insights_storage
@@ -21,19 +18,25 @@ from .models import (
     BatchDiagnosisReport,
     DiagnosisResponse,
 )
-from .prompts import build_batch_summary_prompt
+from .prompts import build_batch_analysis_prompt
 
 logger = logging.getLogger(__name__)
 
 
 class BatchDiagnosisService:
-    """Runs diagnosis on all automations and detects conflicts."""
+    """Analyzes all automations with a single Claude API call."""
+
+    # Maximum automations to analyze in one batch (to avoid token limits)
+    MAX_BATCH_SIZE = 30
 
     def __init__(self):
         self.llm_client = AsyncClaudeClient()
 
     async def run_batch_diagnosis(self, scheduled: bool = False) -> BatchDiagnosisReport:
         """Run batch diagnosis on all automations.
+
+        Uses a single Claude API call (or batched calls for large sets) to analyze
+        all automations at once, rather than one call per automation.
 
         Args:
             scheduled: Whether this is a scheduled run (vs manual trigger)
@@ -68,317 +71,231 @@ class BatchDiagnosisService:
             await diagnostic_storage.save_report(report.model_dump())
             return report
 
-        # 2. Get HA context once for all analyses
-        context = await ha_client.get_full_context()
-
-        # 3. Get full automation configs for conflict detection
+        # 2. Get full automation configs
         full_automations = []
         for auto_info in automations_list:
             auto = await ha_automation_reader.get_automation(auto_info["id"])
             if auto:
                 full_automations.append(auto)
 
-        # 4. Analyze each automation
-        full_analyses: list[DiagnosisResponse] = []
-        automation_summaries: list[AutomationDiagnosisSummary] = []
-        automations_with_errors = 0
+        # 3. Get entity list for validation (optional, may fail for large registries)
+        available_entities = await self._get_entity_list()
 
-        for auto_info in automations_list:
-            try:
-                logger.debug(f"Diagnosing automation: {auto_info['alias']}")
-                result = await automation_doctor.diagnose(auto_info["id"])
-                full_analyses.append(result)
+        # 4. Analyze automations in batches (single call for most cases)
+        all_summaries: list[AutomationDiagnosisSummary] = []
+        all_conflicts: list[AutomationConflict] = []
+        overall_summary = ""
 
-                # Extract summary from the analysis
-                summary = self._extract_summary(result)
-                automation_summaries.append(summary)
-
-                if summary.has_errors:
-                    automations_with_errors += 1
-
-            except Exception as e:
-                logger.error(f"Failed to diagnose {auto_info['alias']}: {e}")
-                # Create error summary
-                summary = AutomationDiagnosisSummary(
-                    automation_id=auto_info["id"],
-                    automation_alias=auto_info["alias"],
-                    has_errors=True,
-                    error_count=1,
-                    warning_count=0,
-                    brief_summary=f"Failed to analyze: {str(e)[:100]}",
+        if len(full_automations) <= self.MAX_BATCH_SIZE:
+            # Single batch - one Claude call
+            summaries, conflicts, summary = await self._analyze_batch(
+                full_automations, available_entities
+            )
+            all_summaries = summaries
+            all_conflicts = conflicts
+            overall_summary = summary
+        else:
+            # Multiple batches for very large automation sets
+            logger.info(f"Splitting {len(full_automations)} automations into batches")
+            for i in range(0, len(full_automations), self.MAX_BATCH_SIZE):
+                batch = full_automations[i:i + self.MAX_BATCH_SIZE]
+                logger.info(f"Analyzing batch {i // self.MAX_BATCH_SIZE + 1}: {len(batch)} automations")
+                summaries, conflicts, summary = await self._analyze_batch(
+                    batch, available_entities
                 )
-                automation_summaries.append(summary)
-                automations_with_errors += 1
+                all_summaries.extend(summaries)
+                all_conflicts.extend(conflicts)
+                if not overall_summary:
+                    overall_summary = summary
 
-        # 5. Detect conflicts between automations
-        conflicts = self._detect_conflicts(full_automations)
-        logger.info(f"Detected {len(conflicts)} conflicts between automations")
+            # Generate combined summary for multiple batches
+            if len(full_automations) > self.MAX_BATCH_SIZE:
+                overall_summary = self._generate_combined_summary(
+                    all_summaries, all_conflicts, total_automations
+                )
 
-        # 6. Extract insights (single + multi automation)
-        insights = self._extract_insights(automation_summaries, full_analyses, conflicts)
+        # 5. Count automations with errors
+        automations_with_errors = sum(1 for s in all_summaries if s.has_errors)
 
-        # 7. Store insights with deduplication
+        # 6. Extract insights for storage
+        insights = self._extract_insights(all_summaries, all_conflicts)
         insights_added = await insights_storage.add_insights(insights)
         logger.info(f"Added {insights_added} new insights")
 
-        # 8. Generate overall summary with Claude
-        overall_summary = await self._generate_overall_summary(
-            automation_summaries, conflicts, total_automations, automations_with_errors
-        )
-
-        # 9. Create and save report
+        # 7. Create report (without full_analyses since we don't have them in batch mode)
         report = BatchDiagnosisReport(
             run_id=run_id,
             run_at=run_at,
             scheduled=scheduled,
             total_automations=total_automations,
-            automations_analyzed=len(full_analyses),
+            automations_analyzed=len(all_summaries),
             automations_with_errors=automations_with_errors,
-            conflicts_found=len(conflicts),
+            conflicts_found=len(all_conflicts),
             insights_added=insights_added,
-            automation_summaries=automation_summaries,
-            conflicts=conflicts,
+            automation_summaries=all_summaries,
+            conflicts=all_conflicts,
             overall_summary=overall_summary,
-            full_analyses=full_analyses,
+            full_analyses=[],  # Not populated in batch mode
         )
 
         await diagnostic_storage.save_report(report.model_dump())
-        logger.info(f"Batch diagnosis complete: {run_id}")
+        logger.info(f"Batch diagnosis complete: {run_id} - {len(all_summaries)} analyzed, "
+                   f"{automations_with_errors} with errors, {len(all_conflicts)} conflicts")
 
         return report
 
-    def _extract_summary(self, diagnosis: DiagnosisResponse) -> AutomationDiagnosisSummary:
-        """Extract summary from a diagnosis response."""
-        analysis = diagnosis.analysis.lower()
+    async def _get_entity_list(self) -> list[str] | None:
+        """Get list of available entity IDs for validation."""
+        try:
+            states = await ha_client.get_states()
+            return [s.get("entity_id") for s in states if s.get("entity_id")]
+        except Exception as e:
+            logger.warning(f"Could not fetch entity list: {e}")
+            return None
 
-        # Simple heuristics to count errors and warnings
-        error_patterns = [
-            r"\b(?:error|issue|problem|fail|invalid|missing|unavailable)\b",
-        ]
-        warning_patterns = [
-            r"\b(?:warning|recommend|suggest|consider|improve|could be|might)\b",
-        ]
+    async def _analyze_batch(
+        self,
+        automations: list[dict[str, Any]],
+        available_entities: list[str] | None,
+    ) -> tuple[list[AutomationDiagnosisSummary], list[AutomationConflict], str]:
+        """Analyze a batch of automations with a single Claude call.
 
-        error_count = 0
-        warning_count = 0
-
-        for pattern in error_patterns:
-            error_count += len(re.findall(pattern, analysis))
-        for pattern in warning_patterns:
-            warning_count += len(re.findall(pattern, analysis))
-
-        # Cap counts at reasonable values
-        error_count = min(error_count, 10)
-        warning_count = min(warning_count, 10)
-
-        has_errors = error_count > 0 or not diagnosis.success
-
-        # Extract first sentence as brief summary
-        brief_summary = ""
-        if diagnosis.analysis:
-            sentences = diagnosis.analysis.split(".")
-            if sentences:
-                brief_summary = sentences[0].strip()[:200]
-
-        return AutomationDiagnosisSummary(
-            automation_id=diagnosis.automation_id,
-            automation_alias=diagnosis.automation_alias,
-            has_errors=has_errors,
-            error_count=error_count,
-            warning_count=warning_count,
-            brief_summary=brief_summary,
-        )
-
-    def _detect_conflicts(
-        self, automations: list[dict[str, Any]]
-    ) -> list[AutomationConflict]:
-        """Detect conflicts between automations.
-
-        Checks for:
-        - shared_trigger: Multiple automations triggered by same entity state change
-        - state_conflict: Automation A sets entity ON, Automation B sets it OFF
-        - resource_contention: Multiple automations control same device/entity
+        Returns:
+            Tuple of (summaries, conflicts, overall_summary)
         """
+        try:
+            # Build prompt
+            prompt = build_batch_analysis_prompt(automations, available_entities)
+
+            # Make single Claude API call
+            logger.debug(f"Sending batch of {len(automations)} automations to Claude")
+            response = await self.llm_client.generate_automation(
+                "You are a Home Assistant automation expert. Respond only with valid JSON.",
+                prompt,
+            )
+
+            # Parse JSON response
+            result = self._parse_batch_response(response, automations)
+            return result
+
+        except Exception as e:
+            logger.error(f"Batch analysis failed: {e}")
+            # Return empty results on failure
+            summaries = [
+                AutomationDiagnosisSummary(
+                    automation_id=a.get("id", ""),
+                    automation_alias=a.get("alias", "Unknown"),
+                    has_errors=False,
+                    error_count=0,
+                    warning_count=0,
+                    brief_summary="Analysis failed",
+                )
+                for a in automations
+            ]
+            return summaries, [], f"Batch analysis failed: {str(e)}"
+
+    def _parse_batch_response(
+        self,
+        response: str,
+        automations: list[dict[str, Any]],
+    ) -> tuple[list[AutomationDiagnosisSummary], list[AutomationConflict], str]:
+        """Parse Claude's JSON response into structured data."""
+        summaries: list[AutomationDiagnosisSummary] = []
         conflicts: list[AutomationConflict] = []
+        overall_summary = ""
 
-        # Build maps for conflict detection
-        trigger_map: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        action_map: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        try:
+            # Extract JSON from response (may be wrapped in ```json ... ```)
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find raw JSON
+                json_str = response.strip()
 
-        for auto in automations:
-            auto_id = auto.get("id", "")
-            auto_alias = auto.get("alias", "Unnamed")
+            data = json.loads(json_str)
 
-            # Extract triggers
-            triggers = self._extract_triggers(auto)
-            for trigger in triggers:
-                entity_id = trigger.get("entity_id")
-                if entity_id:
-                    if isinstance(entity_id, list):
-                        for eid in entity_id:
-                            trigger_map[eid].append({"id": auto_id, "alias": auto_alias, "trigger": trigger})
-                    else:
-                        trigger_map[entity_id].append({"id": auto_id, "alias": auto_alias, "trigger": trigger})
+            # Parse automation summaries
+            for auto_data in data.get("automations", []):
+                status = auto_data.get("status", "ok")
+                issues = auto_data.get("issues", [])
+                has_errors = status == "error" or len(issues) > 0
 
-            # Extract action targets
-            targets = self._extract_target_entities(auto)
-            for entity_id in targets:
-                action_map[entity_id].append({"id": auto_id, "alias": auto_alias, "automation": auto})
+                summaries.append(AutomationDiagnosisSummary(
+                    automation_id=auto_data.get("id", ""),
+                    automation_alias=auto_data.get("alias", "Unknown"),
+                    has_errors=has_errors,
+                    error_count=len(issues) if status == "error" else 0,
+                    warning_count=len(issues) if status == "warning" else 0,
+                    brief_summary=auto_data.get("summary", ""),
+                ))
 
-        # Check for shared triggers
-        for entity_id, trigger_list in trigger_map.items():
-            if len(trigger_list) > 1:
-                auto_ids = list(set(t["id"] for t in trigger_list))
-                auto_names = list(set(t["alias"] for t in trigger_list))
+            # Parse conflicts
+            for conflict_data in data.get("conflicts", []):
+                conflicts.append(AutomationConflict(
+                    conflict_type=conflict_data.get("type", "unknown"),
+                    severity=conflict_data.get("severity", "info"),
+                    automation_ids=conflict_data.get("automation_ids", []),
+                    automation_names=conflict_data.get("automation_names", []),
+                    description=conflict_data.get("description", ""),
+                    affected_entities=conflict_data.get("affected_entities", []),
+                ))
 
-                # Only report if actually different automations
-                if len(auto_ids) > 1:
-                    conflicts.append(
-                        AutomationConflict(
-                            conflict_type="shared_trigger",
-                            severity="warning",
-                            automation_ids=auto_ids,
-                            automation_names=auto_names,
-                            description=f"Multiple automations are triggered by the same entity: {entity_id}",
-                            affected_entities=[entity_id],
-                        )
-                    )
+            overall_summary = data.get("overall_summary", "Analysis complete.")
 
-        # Check for resource contention (same entity targeted by multiple automations)
-        for entity_id, action_list in action_map.items():
-            if len(action_list) > 1:
-                auto_ids = list(set(a["id"] for a in action_list))
-                auto_names = list(set(a["alias"] for a in action_list))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Response was: {response[:500]}...")
 
-                if len(auto_ids) > 1:
-                    # Check for state conflicts (opposing actions)
-                    state_conflict = self._check_state_conflict(entity_id, action_list)
+            # Create basic summaries from automation list
+            for auto in automations:
+                summaries.append(AutomationDiagnosisSummary(
+                    automation_id=auto.get("id", ""),
+                    automation_alias=auto.get("alias", "Unknown"),
+                    has_errors=False,
+                    error_count=0,
+                    warning_count=0,
+                    brief_summary="Could not parse analysis",
+                ))
+            overall_summary = "Analysis completed but response parsing failed."
 
-                    if state_conflict:
-                        conflicts.append(
-                            AutomationConflict(
-                                conflict_type="state_conflict",
-                                severity="critical",
-                                automation_ids=auto_ids,
-                                automation_names=auto_names,
-                                description=f"Automations may set opposing states for {entity_id}: {state_conflict}",
-                                affected_entities=[entity_id],
-                            )
-                        )
-                    else:
-                        conflicts.append(
-                            AutomationConflict(
-                                conflict_type="resource_contention",
-                                severity="info",
-                                automation_ids=auto_ids,
-                                automation_names=auto_names,
-                                description=f"Multiple automations control the same entity: {entity_id}",
-                                affected_entities=[entity_id],
-                            )
-                        )
+        return summaries, conflicts, overall_summary
 
-        return conflicts
+    def _generate_combined_summary(
+        self,
+        summaries: list[AutomationDiagnosisSummary],
+        conflicts: list[AutomationConflict],
+        total: int,
+    ) -> str:
+        """Generate summary for multiple batches."""
+        with_errors = sum(1 for s in summaries if s.has_errors)
+        critical_conflicts = sum(1 for c in conflicts if c.severity == "critical")
 
-    def _extract_triggers(self, automation: dict[str, Any]) -> list[dict[str, Any]]:
-        """Extract trigger information from automation."""
-        triggers = automation.get("trigger", automation.get("triggers", []))
-        if isinstance(triggers, dict):
-            triggers = [triggers]
-        return triggers or []
+        if with_errors == 0 and len(conflicts) == 0:
+            return f"All {total} automations analyzed successfully with no issues detected."
 
-    def _extract_target_entities(self, automation: dict[str, Any]) -> set[str]:
-        """Extract entities targeted by actions."""
-        entities: set[str] = set()
+        parts = [f"Analyzed {total} automations."]
+        if with_errors > 0:
+            parts.append(f"Found issues in {with_errors} automation(s).")
+        if len(conflicts) > 0:
+            parts.append(f"Detected {len(conflicts)} potential conflict(s)")
+            if critical_conflicts > 0:
+                parts.append(f"({critical_conflicts} critical).")
+            else:
+                parts[-1] += "."
 
-        actions = automation.get("action", automation.get("actions", []))
-        if isinstance(actions, dict):
-            actions = [actions]
-
-        for action in actions or []:
-            # Direct entity_id in action
-            entity_id = action.get("entity_id")
-            if entity_id:
-                if isinstance(entity_id, list):
-                    entities.update(entity_id)
-                else:
-                    entities.add(entity_id)
-
-            # Target with entity_id
-            target = action.get("target", {})
-            if isinstance(target, dict):
-                target_entity = target.get("entity_id")
-                if target_entity:
-                    if isinstance(target_entity, list):
-                        entities.update(target_entity)
-                    else:
-                        entities.add(target_entity)
-
-            # Data with entity_id
-            data = action.get("data", {})
-            if isinstance(data, dict):
-                data_entity = data.get("entity_id")
-                if data_entity:
-                    if isinstance(data_entity, list):
-                        entities.update(data_entity)
-                    else:
-                        entities.add(data_entity)
-
-            # Check for service call targets
-            service = action.get("service", "")
-            if service and "." in service:
-                # Service calls like light.turn_on
-                pass  # Entity ID would be in target/entity_id
-
-        return entities
-
-    def _check_state_conflict(
-        self, entity_id: str, action_list: list[dict[str, Any]]
-    ) -> str | None:
-        """Check if automations set opposing states for an entity."""
-        states_set = set()
-
-        for action_info in action_list:
-            auto = action_info.get("automation", {})
-            actions = auto.get("action", auto.get("actions", []))
-            if isinstance(actions, dict):
-                actions = [actions]
-
-            for action in actions or []:
-                target_entity = action.get("entity_id")
-                if not target_entity:
-                    target = action.get("target", {})
-                    target_entity = target.get("entity_id") if isinstance(target, dict) else None
-
-                # Check if this action targets our entity
-                if target_entity:
-                    targets = [target_entity] if isinstance(target_entity, str) else target_entity
-                    if entity_id in targets:
-                        service = action.get("service", "")
-                        if "turn_on" in service:
-                            states_set.add("ON")
-                        elif "turn_off" in service:
-                            states_set.add("OFF")
-                        elif "toggle" in service:
-                            states_set.add("TOGGLE")
-
-        if "ON" in states_set and "OFF" in states_set:
-            return "One automation turns ON, another turns OFF"
-        if "TOGGLE" in states_set and len(states_set) > 1:
-            return "One automation toggles while others set specific states"
-
-        return None
+        return " ".join(parts)
 
     def _extract_insights(
         self,
         summaries: list[AutomationDiagnosisSummary],
-        analyses: list[DiagnosisResponse],
         conflicts: list[AutomationConflict],
     ) -> list[dict[str, Any]]:
         """Extract insights from diagnosis results."""
         insights: list[dict[str, Any]] = []
 
         # Single automation insights
-        for summary, analysis in zip(summaries, analyses):
+        for summary in summaries:
             if summary.has_errors:
                 insights.append({
                     "category": "single",
@@ -389,7 +306,7 @@ class BatchDiagnosisService:
                     "automation_ids": [summary.automation_id],
                     "automation_names": [summary.automation_alias],
                     "affected_entities": [],
-                    "recommendation": "Review the diagnosis details for specific fixes.",
+                    "recommendation": "Review the automation for the identified issues.",
                 })
 
         # Multi-automation insights (conflicts)
@@ -411,46 +328,12 @@ class BatchDiagnosisService:
     def _get_conflict_recommendation(self, conflict_type: str) -> str:
         """Get recommendation text for a conflict type."""
         recommendations = {
-            "shared_trigger": "Consider using conditions to differentiate when each automation should run, or consolidate into a single automation with choose/conditions.",
+            "shared_trigger": "Consider using conditions to differentiate when each automation should run, or consolidate into a single automation.",
             "state_conflict": "Review which automation should take precedence, or add conditions to prevent conflicting actions.",
             "resource_contention": "Verify this is intentional. If automations should not run simultaneously, add mutual exclusion conditions.",
             "timing_race": "Add delays or conditions to ensure proper sequencing of automations.",
-            "circular_dependency": "Review the automation chain to break the circular dependency.",
         }
         return recommendations.get(conflict_type, "Review the conflict and adjust automation logic as needed.")
-
-    async def _generate_overall_summary(
-        self,
-        summaries: list[AutomationDiagnosisSummary],
-        conflicts: list[AutomationConflict],
-        total_automations: int,
-        automations_with_errors: int,
-    ) -> str:
-        """Generate overall summary using Claude."""
-        try:
-            prompt = build_batch_summary_prompt(
-                [s.model_dump() for s in summaries],
-                [c.model_dump() for c in conflicts],
-                total_automations,
-                automations_with_errors,
-            )
-
-            summary = await self.llm_client.generate_automation(
-                "You are a Home Assistant automation expert providing concise summaries.",
-                prompt,
-            )
-            return summary
-
-        except Exception as e:
-            logger.error(f"Failed to generate overall summary: {e}")
-            # Fallback to basic summary
-            if automations_with_errors == 0 and len(conflicts) == 0:
-                return f"All {total_automations} automations analyzed successfully with no issues detected."
-            return (
-                f"Analyzed {total_automations} automations. "
-                f"Found issues in {automations_with_errors} automation(s) and "
-                f"detected {len(conflicts)} potential conflict(s)."
-            )
 
 
 # Global instance
