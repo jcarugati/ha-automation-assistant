@@ -1125,10 +1125,38 @@
             overflow-y: auto;
         }
 
+        .insight-fix-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
         .insight-fix-label {
             font-size: 12px;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+        }
+
+        .insight-copy-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .insight-copy-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--text-secondary);
+        }
+
+        .insight-copy-btn.copied {
+            background: var(--success-color);
+            color: white;
+            border-color: var(--success-color);
         }
 
         .insight-collapse-btn {
@@ -2412,7 +2440,10 @@
                         ${insight.recommendation ? `<div class="insight-recommendation">${escapeHtml(insight.recommendation)}</div>` : ''}
                         <button class="insight-fix-btn" data-insight-id="${insight.insight_id}">Get Fix Suggestion</button>
                         <div class="insight-fix-container" id="fix-${insight.insight_id}">
-                            <div class="insight-fix-label">Suggested Fix:</div>
+                            <div class="insight-fix-header">
+                                <span class="insight-fix-label">Suggested Fix:</span>
+                                <button class="insight-copy-btn" data-insight-id="${insight.insight_id}">Copy</button>
+                            </div>
                             <pre class="insight-fix-yaml"></pre>
                         </div>
                         <button class="insight-collapse-btn">Collapse</button>
@@ -2469,6 +2500,25 @@
                     await getInsightFix(insightId, btn);
                 });
             });
+
+            // Copy button
+            container.querySelectorAll('.insight-copy-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const insightId = e.target.dataset.insightId;
+                    const fixContainer = document.getElementById(`fix-${insightId}`);
+                    if (fixContainer) {
+                        const yaml = fixContainer.querySelector('.insight-fix-yaml').textContent;
+                        await navigator.clipboard.writeText(yaml);
+                        btn.textContent = 'Copied!';
+                        btn.classList.add('copied');
+                        setTimeout(() => {
+                            btn.textContent = 'Copy';
+                            btn.classList.remove('copied');
+                        }, 2000);
+                    }
+                });
+            });
         }
 
         async function getInsightFix(insightId, btn) {
@@ -2487,11 +2537,14 @@
                     throw new Error(data.detail || 'Failed to get fix');
                 }
 
-                // Show the fix suggestion
+                // Show the fix suggestion (strip markdown code blocks if present)
                 const fixContainer = document.getElementById(`fix-${insightId}`);
                 if (fixContainer) {
                     const yamlEl = fixContainer.querySelector('.insight-fix-yaml');
-                    yamlEl.textContent = data.fix_suggestion;
+                    let yaml = data.fix_suggestion;
+                    // Remove markdown code block wrappers
+                    yaml = yaml.replace(/^```ya?ml?\n?/i, '').replace(/\n?```$/g, '').trim();
+                    yamlEl.textContent = yaml;
                     fixContainer.classList.add('visible');
                 }
 
