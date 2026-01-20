@@ -250,6 +250,12 @@ async def run_batch_diagnosis():
             detail="Claude API key not configured. Please configure in add-on settings.",
         )
 
+    if batch_diagnosis_service.is_running:
+        raise HTTPException(
+            status_code=409,
+            detail="A diagnosis is already running. Cancel it first or wait for it to complete.",
+        )
+
     logger.info("Manual batch diagnosis triggered")
     try:
         result = await batch_diagnosis_service.run_batch_diagnosis(scheduled=False)
@@ -257,6 +263,26 @@ async def run_batch_diagnosis():
     except Exception as e:
         logger.error(f"Batch diagnosis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/doctor/cancel")
+async def cancel_batch_diagnosis():
+    """Cancel a running batch diagnosis."""
+    if batch_diagnosis_service.cancel():
+        return {"success": True, "message": "Cancellation requested"}
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="No diagnosis is currently running",
+        )
+
+
+@app.get("/api/doctor/status")
+async def get_diagnosis_status():
+    """Get the current status of batch diagnosis."""
+    return {
+        "is_running": batch_diagnosis_service.is_running,
+    }
 
 
 @app.get("/api/doctor/reports")

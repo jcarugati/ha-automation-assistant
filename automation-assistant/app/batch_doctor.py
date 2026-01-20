@@ -23,6 +23,11 @@ from .prompts import build_batch_analysis_prompt
 logger = logging.getLogger(__name__)
 
 
+class CancelledException(Exception):
+    """Raised when a diagnosis run is cancelled by the user."""
+    pass
+
+
 class BatchDiagnosisService:
     """Analyzes all automations with a single Claude API call."""
 
@@ -31,6 +36,21 @@ class BatchDiagnosisService:
 
     def __init__(self):
         self.llm_client = AsyncClaudeClient()
+        self._cancel_requested = False
+        self._is_running = False
+
+    def cancel(self) -> bool:
+        """Request cancellation of the current diagnosis run."""
+        if self._is_running:
+            self._cancel_requested = True
+            logger.info("Cancellation requested for batch diagnosis")
+            return True
+        return False
+
+    @property
+    def is_running(self) -> bool:
+        """Check if a diagnosis is currently running."""
+        return self._is_running
 
     async def run_batch_diagnosis(self, scheduled: bool = False) -> BatchDiagnosisReport:
         """Run batch diagnosis on all automations.
@@ -44,105 +64,134 @@ class BatchDiagnosisService:
         Returns:
             BatchDiagnosisReport with all results
         """
+        if self._is_running:
+            raise RuntimeError("A diagnosis is already running")
+
+        self._is_running = True
+        self._cancel_requested = False
+
         run_id = str(uuid.uuid4())[:8]
         run_at = datetime.utcnow()
         logger.info(f"Starting batch diagnosis run: {run_id} (scheduled={scheduled})")
 
-        # 1. Get all automations
-        automations_list = await ha_automation_reader.list_automations()
-        total_automations = len(automations_list)
-        logger.info(f"Found {total_automations} automations to analyze")
+        try:
+            # 1. Get all automations
+            automations_list = await ha_automation_reader.list_automations()
+            total_automations = len(automations_list)
+            logger.info(f"Found {total_automations} automations to analyze")
 
-        if total_automations == 0:
+            if total_automations == 0:
+                report = BatchDiagnosisReport(
+                    run_id=run_id,
+                    run_at=run_at,
+                    scheduled=scheduled,
+                    total_automations=0,
+                    automations_analyzed=0,
+                    automations_with_errors=0,
+                    conflicts_found=0,
+                    insights_added=0,
+                    automation_summaries=[],
+                    conflicts=[],
+                    overall_summary="No automations found in Home Assistant.",
+                    full_analyses=[],
+                )
+                await diagnostic_storage.save_report(report.model_dump())
+                return report
+
+            # Check for cancellation
+            if self._cancel_requested:
+                logger.info("Diagnosis cancelled before fetching automations")
+                raise CancelledException("Diagnosis was cancelled")
+
+            # 2. Get full automation configs
+            full_automations = []
+            for auto_info in automations_list:
+                if self._cancel_requested:
+                    logger.info("Diagnosis cancelled while fetching automations")
+                    raise CancelledException("Diagnosis was cancelled")
+                auto = await ha_automation_reader.get_automation(auto_info["id"])
+                if auto:
+                    full_automations.append(auto)
+
+            # 3. Get entity list for validation (optional, may fail for large registries)
+            available_entities = await self._get_entity_list()
+
+            # Check for cancellation before Claude call
+            if self._cancel_requested:
+                logger.info("Diagnosis cancelled before analysis")
+                raise CancelledException("Diagnosis was cancelled")
+
+            # 4. Analyze automations in batches (single call for most cases)
+            all_summaries: list[AutomationDiagnosisSummary] = []
+            all_conflicts: list[AutomationConflict] = []
+            overall_summary = ""
+
+            if len(full_automations) <= self.MAX_BATCH_SIZE:
+                # Single batch - one Claude call
+                summaries, conflicts, summary = await self._analyze_batch(
+                    full_automations, available_entities
+                )
+                all_summaries = summaries
+                all_conflicts = conflicts
+                overall_summary = summary
+            else:
+                # Multiple batches for very large automation sets
+                logger.info(f"Splitting {len(full_automations)} automations into batches")
+                for i in range(0, len(full_automations), self.MAX_BATCH_SIZE):
+                    # Check for cancellation between batches
+                    if self._cancel_requested:
+                        logger.info(f"Diagnosis cancelled after {len(all_summaries)} automations")
+                        raise CancelledException("Diagnosis was cancelled")
+
+                    batch = full_automations[i:i + self.MAX_BATCH_SIZE]
+                    logger.info(f"Analyzing batch {i // self.MAX_BATCH_SIZE + 1}: {len(batch)} automations")
+                    summaries, conflicts, summary = await self._analyze_batch(
+                        batch, available_entities
+                    )
+                    all_summaries.extend(summaries)
+                    all_conflicts.extend(conflicts)
+                    if not overall_summary:
+                        overall_summary = summary
+
+                # Generate combined summary for multiple batches
+                if len(full_automations) > self.MAX_BATCH_SIZE:
+                    overall_summary = self._generate_combined_summary(
+                        all_summaries, all_conflicts, total_automations
+                    )
+
+            # 5. Count automations with errors
+            automations_with_errors = sum(1 for s in all_summaries if s.has_errors)
+
+            # 6. Extract insights for storage
+            insights = self._extract_insights(all_summaries, all_conflicts)
+            insights_added = await insights_storage.add_insights(insights)
+            logger.info(f"Added {insights_added} new insights")
+
+            # 7. Create report (without full_analyses since we don't have them in batch mode)
             report = BatchDiagnosisReport(
                 run_id=run_id,
                 run_at=run_at,
                 scheduled=scheduled,
-                total_automations=0,
-                automations_analyzed=0,
-                automations_with_errors=0,
-                conflicts_found=0,
-                insights_added=0,
-                automation_summaries=[],
-                conflicts=[],
-                overall_summary="No automations found in Home Assistant.",
-                full_analyses=[],
+                total_automations=total_automations,
+                automations_analyzed=len(all_summaries),
+                automations_with_errors=automations_with_errors,
+                conflicts_found=len(all_conflicts),
+                insights_added=insights_added,
+                automation_summaries=all_summaries,
+                conflicts=all_conflicts,
+                overall_summary=overall_summary,
+                full_analyses=[],  # Not populated in batch mode
             )
+
             await diagnostic_storage.save_report(report.model_dump())
+            logger.info(f"Batch diagnosis complete: {run_id} - {len(all_summaries)} analyzed, "
+                       f"{automations_with_errors} with errors, {len(all_conflicts)} conflicts")
+
             return report
 
-        # 2. Get full automation configs
-        full_automations = []
-        for auto_info in automations_list:
-            auto = await ha_automation_reader.get_automation(auto_info["id"])
-            if auto:
-                full_automations.append(auto)
-
-        # 3. Get entity list for validation (optional, may fail for large registries)
-        available_entities = await self._get_entity_list()
-
-        # 4. Analyze automations in batches (single call for most cases)
-        all_summaries: list[AutomationDiagnosisSummary] = []
-        all_conflicts: list[AutomationConflict] = []
-        overall_summary = ""
-
-        if len(full_automations) <= self.MAX_BATCH_SIZE:
-            # Single batch - one Claude call
-            summaries, conflicts, summary = await self._analyze_batch(
-                full_automations, available_entities
-            )
-            all_summaries = summaries
-            all_conflicts = conflicts
-            overall_summary = summary
-        else:
-            # Multiple batches for very large automation sets
-            logger.info(f"Splitting {len(full_automations)} automations into batches")
-            for i in range(0, len(full_automations), self.MAX_BATCH_SIZE):
-                batch = full_automations[i:i + self.MAX_BATCH_SIZE]
-                logger.info(f"Analyzing batch {i // self.MAX_BATCH_SIZE + 1}: {len(batch)} automations")
-                summaries, conflicts, summary = await self._analyze_batch(
-                    batch, available_entities
-                )
-                all_summaries.extend(summaries)
-                all_conflicts.extend(conflicts)
-                if not overall_summary:
-                    overall_summary = summary
-
-            # Generate combined summary for multiple batches
-            if len(full_automations) > self.MAX_BATCH_SIZE:
-                overall_summary = self._generate_combined_summary(
-                    all_summaries, all_conflicts, total_automations
-                )
-
-        # 5. Count automations with errors
-        automations_with_errors = sum(1 for s in all_summaries if s.has_errors)
-
-        # 6. Extract insights for storage
-        insights = self._extract_insights(all_summaries, all_conflicts)
-        insights_added = await insights_storage.add_insights(insights)
-        logger.info(f"Added {insights_added} new insights")
-
-        # 7. Create report (without full_analyses since we don't have them in batch mode)
-        report = BatchDiagnosisReport(
-            run_id=run_id,
-            run_at=run_at,
-            scheduled=scheduled,
-            total_automations=total_automations,
-            automations_analyzed=len(all_summaries),
-            automations_with_errors=automations_with_errors,
-            conflicts_found=len(all_conflicts),
-            insights_added=insights_added,
-            automation_summaries=all_summaries,
-            conflicts=all_conflicts,
-            overall_summary=overall_summary,
-            full_analyses=[],  # Not populated in batch mode
-        )
-
-        await diagnostic_storage.save_report(report.model_dump())
-        logger.info(f"Batch diagnosis complete: {run_id} - {len(all_summaries)} analyzed, "
-                   f"{automations_with_errors} with errors, {len(all_conflicts)} conflicts")
-
-        return report
+        finally:
+            self._is_running = False
+            self._cancel_requested = False
 
     async def _get_entity_list(self) -> list[str] | None:
         """Get list of available entity IDs for validation."""

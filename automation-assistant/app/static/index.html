@@ -785,10 +785,23 @@
             color: var(--text-secondary);
         }
 
+        .batch-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
         .btn-batch {
             margin-top: 0;
             width: auto;
             white-space: nowrap;
+        }
+
+        .btn-danger {
+            background: var(--error-color);
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
         }
 
         .last-run-info {
@@ -1186,7 +1199,10 @@
                                 <h3>Automated Diagnosis</h3>
                                 <div id="scheduleInfo" class="schedule-info">Loading schedule...</div>
                             </div>
-                            <button id="runBatchBtn" class="btn btn-primary btn-batch">Run Full Diagnosis</button>
+                            <div class="batch-buttons">
+                                <button id="runBatchBtn" class="btn btn-primary btn-batch">Run Full Diagnosis</button>
+                                <button id="cancelBatchBtn" class="btn btn-danger btn-batch hidden">Cancel</button>
+                            </div>
                         </div>
                         <div id="lastRunInfo" class="last-run-info hidden">
                             <span class="last-run-label">Last run:</span>
@@ -1375,6 +1391,7 @@
 
         // Batch diagnosis elements
         const runBatchBtn = document.getElementById('runBatchBtn');
+        const cancelBatchBtn = document.getElementById('cancelBatchBtn');
         const batchLoading = document.getElementById('batchLoading');
         const scheduleInfo = document.getElementById('scheduleInfo');
         const lastRunInfo = document.getElementById('lastRunInfo');
@@ -1963,6 +1980,7 @@
 
             // Batch diagnosis event listeners
             runBatchBtn.addEventListener('click', runBatchDiagnosis);
+            cancelBatchBtn.addEventListener('click', cancelBatchDiagnosis);
             setupInsightsTabs();
         }
 
@@ -2153,7 +2171,8 @@
 
         async function runBatchDiagnosis() {
             runBatchBtn.disabled = true;
-            runBatchBtn.textContent = 'Running...';
+            runBatchBtn.classList.add('hidden');
+            cancelBatchBtn.classList.remove('hidden');
             batchLoading.classList.remove('hidden');
             hideDoctorError();
 
@@ -2176,11 +2195,39 @@
                 showSuccess(`Diagnosis complete: ${data.automations_analyzed} automations analyzed, ${data.conflicts_found} conflicts found, ${data.insights_added} new insights`);
 
             } catch (error) {
-                showDoctorError(error.message);
+                if (error.message.includes('cancelled')) {
+                    showSuccess('Diagnosis cancelled');
+                } else {
+                    showDoctorError(error.message);
+                }
             } finally {
                 runBatchBtn.disabled = false;
-                runBatchBtn.textContent = 'Run Full Diagnosis';
+                runBatchBtn.classList.remove('hidden');
+                cancelBatchBtn.classList.add('hidden');
                 batchLoading.classList.add('hidden');
+            }
+        }
+
+        async function cancelBatchDiagnosis() {
+            cancelBatchBtn.disabled = true;
+            cancelBatchBtn.textContent = 'Cancelling...';
+
+            try {
+                const response = await fetch('./api/doctor/cancel', {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to cancel');
+                }
+
+                // The runBatchDiagnosis will handle the UI reset when it catches the cancellation
+            } catch (error) {
+                showDoctorError(error.message);
+            } finally {
+                cancelBatchBtn.disabled = false;
+                cancelBatchBtn.textContent = 'Cancel';
             }
         }
 
