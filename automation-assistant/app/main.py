@@ -430,3 +430,77 @@ async def delete_insight(insight_id: str):
     except Exception as e:
         logger.error(f"Failed to delete insight {insight_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/doctor/insights/{insight_id}/fix")
+async def get_insight_fix(insight_id: str):
+    """Get a suggested fix for an insight."""
+    if not config.is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Claude API key not configured.",
+        )
+
+    try:
+        # Get the insight
+        all_insights = await insights_storage.get_all()
+        insight = next((i for i in all_insights if i.get("insight_id") == insight_id), None)
+        if not insight:
+            raise HTTPException(status_code=404, detail="Insight not found")
+
+        # Get the automation(s) involved
+        from .ha_automations import ha_automation_reader
+        from .llm.claude import AsyncClaudeClient
+
+        automations = []
+        for auto_id in insight.get("automation_ids", []):
+            auto = await ha_automation_reader.get_automation(auto_id)
+            if auto:
+                automations.append(auto)
+
+        if not automations:
+            raise HTTPException(status_code=404, detail="Could not find the automation(s)")
+
+        # Build prompt for fix suggestion
+        import yaml
+        automations_yaml = "\n\n".join([
+            f"# {a.get('alias', 'Unnamed')} (id: {a.get('id')})\n```yaml\n{yaml.dump(a, default_flow_style=False)}\n```"
+            for a in automations
+        ])
+
+        prompt = f"""Fix this Home Assistant automation issue.
+
+## Issue
+**Type:** {insight.get('insight_type', 'unknown')}
+**Title:** {insight.get('title', '')}
+**Description:** {insight.get('description', '')}
+
+## Automation(s)
+{automations_yaml}
+
+## Your Task
+Provide a corrected version of the automation(s) that fixes the issue.
+- Return ONLY the corrected YAML, no explanations
+- If multiple automations are involved, separate them with ---
+- Keep the original id and alias
+- Only change what's necessary to fix the issue"""
+
+        llm = AsyncClaudeClient()
+        fix_suggestion = await llm.generate_automation(
+            "You are a Home Assistant automation expert. Return only valid YAML.",
+            prompt,
+        )
+
+        return {
+            "insight_id": insight_id,
+            "automation_ids": insight.get("automation_ids", []),
+            "automation_names": insight.get("automation_names", []),
+            "issue": insight.get("description", ""),
+            "fix_suggestion": fix_suggestion,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get fix for insight {insight_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -909,6 +909,16 @@
             border-radius: 8px;
             padding: 16px;
             border-left: 4px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .insight-item:hover {
+            background: var(--bg-card);
+        }
+
+        .insight-item.expanded {
+            cursor: default;
         }
 
         .insight-item.severity-info {
@@ -1034,6 +1044,105 @@
             font-weight: 500;
             color: var(--text-primary);
             margin: 0 0 16px 0;
+        }
+
+        .insight-expanded {
+            display: none;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .insight-item.expanded .insight-expanded {
+            display: block;
+        }
+
+        .insight-automation-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .insight-automation-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .insight-automation-link:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .insight-fix-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+
+        .insight-fix-btn:hover {
+            background: #0288d1;
+        }
+
+        .insight-fix-btn:disabled {
+            background: var(--text-secondary);
+            cursor: not-allowed;
+        }
+
+        .insight-fix-container {
+            display: none;
+        }
+
+        .insight-fix-container.visible {
+            display: block;
+        }
+
+        .insight-fix-yaml {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .insight-fix-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .insight-collapse-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            padding: 4px 8px;
+            margin-top: 8px;
+        }
+
+        .insight-collapse-btn:hover {
+            color: var(--text-primary);
         }
 
         /* Overlay for mobile */
@@ -2273,8 +2382,13 @@
         function renderInsightItem(insight) {
             const resolvedClass = insight.resolved ? 'resolved' : '';
             const severityClass = 'severity-' + insight.severity;
-            const automations = insight.automation_names.join(', ');
             const firstSeen = formatDate(insight.first_seen);
+
+            // Build automation links
+            const automationLinks = insight.automation_ids.map((id, index) => {
+                const name = insight.automation_names[index] || id;
+                return `<a href="/config/automation/edit/${id}" target="_blank" class="insight-automation-link" title="Edit in Home Assistant">${escapeHtml(name)}</a>`;
+            }).join('');
 
             return `
                 <div class="insight-item ${severityClass} ${resolvedClass}" data-insight-id="${insight.insight_id}">
@@ -2283,10 +2397,8 @@
                         <span class="insight-severity ${insight.severity}">${insight.severity}</span>
                     </div>
                     <div class="insight-description">${escapeHtml(insight.description)}</div>
-                    <div class="insight-automations"><strong>Automation(s):</strong> ${escapeHtml(automations)}</div>
-                    ${insight.recommendation ? `<div class="insight-recommendation">${escapeHtml(insight.recommendation)}</div>` : ''}
                     <div class="insight-meta">
-                        <span>First seen: ${firstSeen}</span>
+                        <span>First seen: ${firstSeen} | Click to expand</span>
                         <div class="insight-actions">
                             <button class="insight-action-btn resolve-btn" data-insight-id="${insight.insight_id}" data-resolved="${insight.resolved}">
                                 ${insight.resolved ? 'Unresolve' : 'Mark Resolved'}
@@ -2294,27 +2406,103 @@
                             <button class="insight-action-btn delete-btn" data-insight-id="${insight.insight_id}">Delete</button>
                         </div>
                     </div>
+                    <div class="insight-expanded">
+                        <div class="insight-fix-label">Affected Automation(s):</div>
+                        <div class="insight-automation-links">${automationLinks}</div>
+                        ${insight.recommendation ? `<div class="insight-recommendation">${escapeHtml(insight.recommendation)}</div>` : ''}
+                        <button class="insight-fix-btn" data-insight-id="${insight.insight_id}">Get Fix Suggestion</button>
+                        <div class="insight-fix-container" id="fix-${insight.insight_id}">
+                            <div class="insight-fix-label">Suggested Fix:</div>
+                            <pre class="insight-fix-yaml"></pre>
+                        </div>
+                        <button class="insight-collapse-btn">Collapse</button>
+                    </div>
                 </div>
             `;
         }
 
         function attachInsightEventListeners(container) {
+            // Click on insight to expand
+            container.querySelectorAll('.insight-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    // Don't expand if clicking on buttons or links
+                    if (e.target.closest('button') || e.target.closest('a')) return;
+                    item.classList.toggle('expanded');
+                });
+            });
+
+            // Collapse button
+            container.querySelectorAll('.insight-collapse-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const item = e.target.closest('.insight-item');
+                    if (item) item.classList.remove('expanded');
+                });
+            });
+
+            // Resolve button
             container.querySelectorAll('.resolve-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
                     const insightId = e.target.dataset.insightId;
                     const currentlyResolved = e.target.dataset.resolved === 'true';
                     await toggleInsightResolved(insightId, !currentlyResolved);
                 });
             });
 
+            // Delete button
             container.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
                     const insightId = e.target.dataset.insightId;
                     if (confirm('Are you sure you want to delete this insight?')) {
                         await deleteInsight(insightId);
                     }
                 });
             });
+
+            // Get fix button
+            container.querySelectorAll('.insight-fix-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const insightId = e.target.dataset.insightId;
+                    await getInsightFix(insightId, btn);
+                });
+            });
+        }
+
+        async function getInsightFix(insightId, btn) {
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Getting fix...';
+
+            try {
+                const response = await fetch(`./api/doctor/insights/${insightId}/fix`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to get fix');
+                }
+
+                // Show the fix suggestion
+                const fixContainer = document.getElementById(`fix-${insightId}`);
+                if (fixContainer) {
+                    const yamlEl = fixContainer.querySelector('.insight-fix-yaml');
+                    yamlEl.textContent = data.fix_suggestion;
+                    fixContainer.classList.add('visible');
+                }
+
+                btn.textContent = 'Refresh Fix';
+
+            } catch (error) {
+                showError('Failed to get fix: ' + error.message);
+                btn.textContent = originalText;
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         async function toggleInsightResolved(insightId, resolved) {
