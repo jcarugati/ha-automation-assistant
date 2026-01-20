@@ -2505,20 +2505,48 @@
             container.querySelectorAll('.insight-copy-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    const insightId = e.target.dataset.insightId;
+                    e.preventDefault();
+                    const insightId = btn.dataset.insightId;
                     const fixContainer = document.getElementById(`fix-${insightId}`);
                     if (fixContainer) {
                         const yaml = fixContainer.querySelector('.insight-fix-yaml').textContent;
-                        await navigator.clipboard.writeText(yaml);
-                        btn.textContent = 'Copied!';
-                        btn.classList.add('copied');
-                        setTimeout(() => {
-                            btn.textContent = 'Copy';
-                            btn.classList.remove('copied');
-                        }, 2000);
+                        try {
+                            await copyToClipboard(yaml);
+                            btn.textContent = 'Copied!';
+                            btn.classList.add('copied');
+                            setTimeout(() => {
+                                btn.textContent = 'Copy';
+                                btn.classList.remove('copied');
+                            }, 2000);
+                        } catch (err) {
+                            console.error('Copy failed:', err);
+                            btn.textContent = 'Failed';
+                            setTimeout(() => {
+                                btn.textContent = 'Copy';
+                            }, 2000);
+                        }
                     }
                 });
             });
+        }
+
+        async function copyToClipboard(text) {
+            // Try modern clipboard API first
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text);
+            }
+            // Fallback for older browsers or non-HTTPS
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+            }
         }
 
         async function getInsightFix(insightId, btn) {
