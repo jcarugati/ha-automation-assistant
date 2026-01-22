@@ -19,6 +19,22 @@ def compact_automation(auto: dict[str, Any]) -> str:
     mode = auto.get("mode", "single")
     lines.append(f"[{alias}] id={auto_id} mode={mode}")
 
+    # Check if this is a blueprint-based automation
+    use_blueprint = auto.get("use_blueprint")
+    if use_blueprint:
+        blueprint_path = use_blueprint.get("path", "unknown")
+        lines.append(f"  BLUEPRINT: {blueprint_path}")
+        inputs = use_blueprint.get("input", {})
+        if inputs:
+            # Show blueprint inputs (these define the automation's behavior)
+            for key, value in inputs.items():
+                value_str = str(value)
+                if len(value_str) > 60:
+                    value_str = value_str[:57] + "..."
+                lines.append(f"    input.{key}: {value_str}")
+        lines.append("  (Blueprint automation - triggers/actions defined in blueprint)")
+        return "\n".join(lines)
+
     # Triggers
     triggers = auto.get("trigger", auto.get("triggers", []))
     if isinstance(triggers, dict):
@@ -282,6 +298,8 @@ Respond with JSON only:
 {{"automations":[{{"id":"...","alias":"...","status":"ok|warning|error","issues":[],"summary":"..."}}],
 "conflicts":[{{"type":"shared_trigger|state_conflict|resource_contention|timing_race","severity":"info|warning|critical","automation_ids":[],"automation_names":[],"description":"...","affected_entities":[],"recommendation":"..."}}],
 "overall_summary":"..."}}
+
+IMPORTANT: Blueprint automations (marked with BLUEPRINT:) are VALID. Their triggers/actions are defined in the blueprint file, not shown here. Do NOT flag them as empty or missing triggers/actions.
 
 Check: invalid entities, logic problems, shared triggers, opposing actions on same entity. Only real issues."""
 

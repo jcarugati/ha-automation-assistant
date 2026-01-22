@@ -834,6 +834,142 @@
             color: var(--accent-color);
         }
 
+        /* Schedule Settings */
+        .schedule-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .schedule-settings-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: color 0.2s, background 0.2s;
+        }
+
+        .schedule-settings-btn:hover {
+            color: var(--primary-color);
+            background: rgba(3, 169, 244, 0.1);
+        }
+
+        .schedule-settings-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .schedule-settings-panel {
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .schedule-settings-panel.hidden {
+            display: none;
+        }
+
+        .schedule-settings-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .schedule-setting {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .schedule-setting:last-child {
+            margin-bottom: 0;
+        }
+
+        .schedule-setting label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .schedule-time-input {
+            width: 100px;
+            padding: 6px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .schedule-time-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .schedule-toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .schedule-toggle.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .schedule-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: var(--text-primary);
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .schedule-toggle.active::after {
+            transform: translateX(20px);
+        }
+
+        .schedule-save-btn {
+            margin-top: 16px;
+            width: 100%;
+            padding: 8px 16px;
+            background: var(--primary-color);
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .schedule-save-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .schedule-save-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         /* Insights styles */
         .insights-card {
             margin-top: 24px;
@@ -1334,12 +1470,32 @@
                         <div class="batch-header">
                             <div class="batch-title">
                                 <h3>Automated Diagnosis</h3>
-                                <div id="scheduleInfo" class="schedule-info">Loading schedule...</div>
+                                <div class="schedule-row">
+                                    <div id="scheduleInfo" class="schedule-info">Loading schedule...</div>
+                                    <button id="scheduleSettingsBtn" class="schedule-settings-btn" title="Configure schedule">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                             <div class="batch-buttons">
                                 <button id="runBatchBtn" class="btn btn-primary btn-batch">Run Full Diagnosis</button>
                                 <button id="cancelBatchBtn" class="btn btn-danger btn-batch hidden">Cancel</button>
                             </div>
+                        </div>
+                        <div id="scheduleSettingsPanel" class="schedule-settings-panel hidden">
+                            <div class="schedule-settings-title">Schedule Settings</div>
+                            <div class="schedule-setting">
+                                <label>Enable daily diagnosis</label>
+                                <div id="scheduleEnabledToggle" class="schedule-toggle active"></div>
+                            </div>
+                            <div class="schedule-setting">
+                                <label>Run at time (24h)</label>
+                                <input type="text" id="scheduleTimeInput" class="schedule-time-input" placeholder="03:00" value="03:00" pattern="[0-2][0-9]:[0-5][0-9]">
+                            </div>
+                            <button id="saveScheduleBtn" class="schedule-save-btn">Save Schedule</button>
                         </div>
                         <div id="lastRunInfo" class="last-run-info hidden">
                             <span class="last-run-label">Last run:</span>
@@ -1537,6 +1693,11 @@
         const insightsCount = document.getElementById('insightsCount');
         const insightsSingle = document.getElementById('insightsSingle');
         const insightsMulti = document.getElementById('insightsMulti');
+        const scheduleSettingsBtn = document.getElementById('scheduleSettingsBtn');
+        const scheduleSettingsPanel = document.getElementById('scheduleSettingsPanel');
+        const scheduleEnabledToggle = document.getElementById('scheduleEnabledToggle');
+        const scheduleTimeInput = document.getElementById('scheduleTimeInput');
+        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
 
         document.addEventListener('DOMContentLoaded', () => {
             loadContextSummary();
@@ -1708,10 +1869,20 @@
             }
         }
 
+        function extractAliasFromYaml(yamlContent) {
+            if (!yamlContent) return '';
+            // Match "alias: value" or "alias: 'value'" or 'alias: "value"'
+            const match = yamlContent.match(/^alias:\s*["']?([^"'\n]+)["']?/m);
+            return match ? match[1].trim() : '';
+        }
+
         function openSaveModal() {
-            automationNameInput.value = '';
+            // Extract alias from generated YAML as suggested name
+            const suggestedName = extractAliasFromYaml(currentYaml);
+            automationNameInput.value = suggestedName;
             saveModal.classList.remove('hidden');
             automationNameInput.focus();
+            automationNameInput.select();  // Select text so user can easily replace
         }
 
         function closeSaveModal() {
@@ -2119,6 +2290,11 @@
             runBatchBtn.addEventListener('click', runBatchDiagnosis);
             cancelBatchBtn.addEventListener('click', cancelBatchDiagnosis);
             setupInsightsTabs();
+
+            // Schedule settings event listeners
+            scheduleSettingsBtn.addEventListener('click', toggleScheduleSettings);
+            scheduleEnabledToggle.addEventListener('click', toggleScheduleEnabled);
+            saveScheduleBtn.addEventListener('click', saveSchedule);
         }
 
         function switchTab(tab) {
@@ -2275,18 +2451,71 @@
                 const response = await fetch('./api/doctor/schedule');
                 if (response.ok) {
                     const data = await response.json();
+                    // Update the schedule info text
                     if (data.enabled && data.next_run) {
-                        const nextRun = new Date(data.next_run);
                         scheduleInfo.textContent = `Next scheduled run: ${formatDateTime(data.next_run)} (daily at ${data.time})`;
                     } else if (data.enabled) {
                         scheduleInfo.textContent = `Scheduled daily at ${data.time}`;
                     } else {
                         scheduleInfo.textContent = 'Scheduling disabled';
                     }
+                    // Update the settings panel
+                    scheduleTimeInput.value = data.time || '03:00';
+                    if (data.enabled) {
+                        scheduleEnabledToggle.classList.add('active');
+                    } else {
+                        scheduleEnabledToggle.classList.remove('active');
+                    }
                 }
             } catch (error) {
                 console.error('Failed to load schedule:', error);
                 scheduleInfo.textContent = 'Could not load schedule';
+            }
+        }
+
+        function toggleScheduleSettings() {
+            scheduleSettingsPanel.classList.toggle('hidden');
+        }
+
+        function toggleScheduleEnabled() {
+            scheduleEnabledToggle.classList.toggle('active');
+        }
+
+        async function saveSchedule() {
+            const enabled = scheduleEnabledToggle.classList.contains('active');
+            const time = scheduleTimeInput.value.trim();
+
+            // Validate time format
+            if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) {
+                showDoctorError('Invalid time format. Please use HH:MM (24-hour format).');
+                return;
+            }
+
+            saveScheduleBtn.disabled = true;
+            saveScheduleBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch('./api/doctor/schedule', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ time, enabled })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to save schedule');
+                }
+
+                // Refresh the schedule info display
+                await loadScheduleInfo();
+                scheduleSettingsPanel.classList.add('hidden');
+                showSuccess('Schedule saved successfully');
+
+            } catch (error) {
+                showDoctorError(error.message);
+            } finally {
+                saveScheduleBtn.disabled = false;
+                saveScheduleBtn.textContent = 'Save Schedule';
             }
         }
 
