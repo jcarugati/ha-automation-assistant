@@ -125,6 +125,84 @@ class HAClient:
         """Fetch entity registry via WebSocket."""
         return await self._websocket_command("config/entity_registry/list")
 
+    async def create_or_update_automation(
+        self, automation_id: str, automation_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create or update an automation in Home Assistant.
+
+        Uses the /api/config/automation/config/{id} endpoint to save
+        the automation configuration directly to HA.
+
+        Args:
+            automation_id: The unique ID for the automation
+            automation_config: The automation configuration dict
+
+        Returns:
+            Dict with 'success' and optionally 'error' keys
+        """
+        session = await self._get_session()
+        url = f"{self.ha_url}/api/config/automation/config/{automation_id}"
+
+        try:
+            async with session.post(url, json=automation_config) as response:
+                if response.status == 200:
+                    return {"success": True}
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Failed to save automation: {response.status} - {error_text}")
+                    return {"success": False, "error": error_text}
+        except aiohttp.ClientError as e:
+            logger.error(f"Failed to save automation: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def reload_automations(self) -> bool:
+        """Reload automations in Home Assistant.
+
+        Calls the automation.reload service to make HA pick up changes.
+
+        Returns:
+            True if reload was successful, False otherwise
+        """
+        session = await self._get_session()
+        url = f"{self.ha_url}/api/services/automation/reload"
+
+        try:
+            async with session.post(url, json={}) as response:
+                if response.status == 200:
+                    logger.info("Automations reloaded successfully")
+                    return True
+                else:
+                    logger.error(f"Failed to reload automations: {response.status}")
+                    return False
+        except aiohttp.ClientError as e:
+            logger.error(f"Failed to reload automations: {e}")
+            return False
+
+    async def get_automation_config(self, automation_id: str) -> dict[str, Any] | None:
+        """Get the configuration of a specific automation.
+
+        Args:
+            automation_id: The automation ID to fetch
+
+        Returns:
+            The automation config dict, or None if not found
+        """
+        session = await self._get_session()
+        url = f"{self.ha_url}/api/config/automation/config/{automation_id}"
+
+        try:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 404:
+                    return None
+                else:
+                    logger.error(f"Failed to get automation config: {response.status}")
+                    return None
+        except aiohttp.ClientError as e:
+            logger.error(f"Failed to get automation config: {e}")
+            return None
+
     async def get_full_context(self) -> dict[str, Any]:
         """Fetch all context data from Home Assistant.
 

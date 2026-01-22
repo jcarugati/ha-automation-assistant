@@ -17,11 +17,14 @@ from .doctor import automation_doctor
 from .ha_client import ha_client
 from .insights_storage import insights_storage
 from .models import (
+    ApplyFixResponse,
     AutomationRequest,
     AutomationResponse,
     BatchDiagnosisReport,
     BatchReportSummary,
     ContextSummary,
+    DeployAutomationRequest,
+    DeployAutomationResponse,
     DiagnoseRequest,
     DiagnosisResponse,
     HAAutomationList,
@@ -187,6 +190,67 @@ async def delete_automation(automation_id: str):
         raise HTTPException(status_code=404, detail="Automation not found")
     logger.info(f"Deleted automation: {automation_id}")
     return {"success": True}
+
+
+# Deploy endpoints
+
+
+@app.post("/api/deploy", response_model=DeployAutomationResponse)
+async def deploy_automation(request: DeployAutomationRequest):
+    """Deploy an automation directly to Home Assistant.
+
+    This creates or updates an automation in HA and reloads automations.
+    """
+    import uuid
+    import yaml
+
+    # Parse the YAML content
+    try:
+        automation_config = yaml.safe_load(request.yaml_content)
+        if not automation_config:
+            raise HTTPException(status_code=400, detail="Empty YAML content")
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+
+    # Extract or generate automation ID
+    automation_id = request.automation_id
+    if not automation_id:
+        # Try to extract from YAML
+        automation_id = automation_config.get("id")
+    if not automation_id:
+        # Generate a new UUID
+        automation_id = str(uuid.uuid4())
+        automation_config["id"] = automation_id
+
+    # Check if this is a new automation or update
+    existing = await ha_client.get_automation_config(automation_id)
+    is_new = existing is None
+
+    # Ensure the ID is set in the config
+    automation_config["id"] = automation_id
+
+    # Deploy to HA
+    result = await ha_client.create_or_update_automation(automation_id, automation_config)
+
+    if not result.get("success"):
+        error_msg = result.get("error", "Unknown error")
+        raise HTTPException(status_code=500, detail=f"Failed to deploy: {error_msg}")
+
+    # Reload automations to apply changes
+    reloaded = await ha_client.reload_automations()
+    if not reloaded:
+        logger.warning("Automation saved but reload failed - may require manual reload")
+
+    action = "created" if is_new else "updated"
+    alias = automation_config.get("alias", automation_id)
+    logger.info(f"Deployed automation '{alias}' ({automation_id}) - {action}")
+
+    return DeployAutomationResponse(
+        success=True,
+        automation_id=automation_id,
+        message=f"Automation '{alias}' {action} successfully",
+        is_new=is_new,
+    )
 
 
 # Doctor endpoints
@@ -503,4 +567,88 @@ Provide a corrected version of the automation(s) that fixes the issue.
         raise
     except Exception as e:
         logger.error(f"Failed to get fix for insight {insight_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ApplyFixRequest(BaseModel):
+    """Request model for applying a fix."""
+    yaml_content: str
+
+
+@app.post("/api/doctor/insights/{insight_id}/apply", response_model=ApplyFixResponse)
+async def apply_insight_fix(insight_id: str, request: ApplyFixRequest):
+    """Apply a fix suggestion directly to Home Assistant.
+
+    Takes the fixed YAML and deploys it to HA, then marks the insight as resolved.
+    """
+    import yaml as yaml_lib
+
+    try:
+        # Get the insight to know which automation(s) are affected
+        all_insights = await insights_storage.get_all()
+        insight = next((i for i in all_insights if i.get("insight_id") == insight_id), None)
+        if not insight:
+            raise HTTPException(status_code=404, detail="Insight not found")
+
+        # Parse the YAML - may contain multiple documents separated by ---
+        yaml_content = request.yaml_content
+        # Strip markdown code blocks if present
+        yaml_content = yaml_content.replace("```yaml", "").replace("```yml", "").replace("```", "").strip()
+
+        try:
+            documents = list(yaml_lib.safe_load_all(yaml_content))
+        except yaml_lib.YAMLError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+
+        if not documents:
+            raise HTTPException(status_code=400, detail="No automation found in YAML")
+
+        # Deploy each automation
+        deployed_ids = []
+        errors = []
+
+        for doc in documents:
+            if not doc:
+                continue
+
+            automation_id = doc.get("id")
+            if not automation_id:
+                errors.append("Automation missing 'id' field")
+                continue
+
+            # Ensure the ID is in the config
+            doc["id"] = automation_id
+
+            result = await ha_client.create_or_update_automation(automation_id, doc)
+            if result.get("success"):
+                deployed_ids.append(automation_id)
+                logger.info(f"Applied fix to automation: {automation_id}")
+            else:
+                errors.append(f"Failed to update {automation_id}: {result.get('error', 'Unknown error')}")
+
+        if not deployed_ids:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to apply fix: {'; '.join(errors) if errors else 'No automations deployed'}"
+            )
+
+        # Reload automations
+        reloaded = await ha_client.reload_automations()
+        if not reloaded:
+            errors.append("Automations saved but reload failed - may require manual reload")
+
+        # Mark the insight as resolved
+        await insights_storage.mark_resolved(insight_id, True)
+
+        return ApplyFixResponse(
+            success=True,
+            automation_ids=deployed_ids,
+            message=f"Fix applied to {len(deployed_ids)} automation(s)",
+            errors=errors,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to apply fix for insight {insight_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

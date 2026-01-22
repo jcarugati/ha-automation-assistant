@@ -217,3 +217,31 @@ class ScheduleConfig(BaseModel):
     enabled: bool = Field(True, description="Whether scheduling is enabled")
     time: str = Field("03:00", description="Time to run daily (HH:MM format)")
     next_run: datetime | None = Field(None, description="Next scheduled run time")
+
+
+# Deploy feature models
+
+
+class DeployAutomationRequest(BaseModel):
+    """Request model for deploying an automation to Home Assistant."""
+
+    yaml_content: str = Field(..., min_length=1, description="YAML content of the automation")
+    automation_id: str | None = Field(None, description="Optional automation ID. If not provided, will be extracted from YAML or generated.")
+
+
+class DeployAutomationResponse(BaseModel):
+    """Response model for deployment result."""
+
+    success: bool = Field(..., description="Whether deployment was successful")
+    automation_id: str = Field(..., description="ID of the deployed automation")
+    message: str = Field(..., description="Status message")
+    is_new: bool = Field(..., description="True if automation was created, False if updated")
+
+
+class ApplyFixResponse(BaseModel):
+    """Response model for applying a fix to Home Assistant."""
+
+    success: bool = Field(..., description="Whether the fix was applied successfully")
+    automation_ids: list[str] = Field(default_factory=list, description="IDs of automations that were updated")
+    message: str = Field(..., description="Status message")
+    errors: list[str] = Field(default_factory=list, description="Any errors encountered")

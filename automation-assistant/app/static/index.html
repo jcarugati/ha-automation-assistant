@@ -1295,6 +1295,37 @@
             border-color: var(--success-color);
         }
 
+        .insight-fix-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .insight-apply-btn {
+            background: var(--primary-color);
+            border: 1px solid var(--primary-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .insight-apply-btn:hover {
+            background: var(--primary-dark);
+            border-color: var(--primary-dark);
+        }
+
+        .insight-apply-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .insight-apply-btn.applied {
+            background: var(--success-color);
+            border-color: var(--success-color);
+        }
+
         .insight-collapse-btn {
             background: none;
             border: none;
@@ -1456,6 +1487,7 @@
                             <button id="validateBtn" class="btn btn-secondary btn-small">Validate</button>
                             <button id="copyBtn" class="btn btn-secondary btn-small">Copy</button>
                             <button id="saveBtn" class="btn btn-success btn-small">Save</button>
+                            <button id="deployBtn" class="btn btn-primary btn-small">Deploy to HA</button>
                         </div>
                     </div>
                     <pre id="yamlOutput" class="yaml-output"><code></code></pre>
@@ -1622,6 +1654,32 @@
         </div>
     </div>
 
+    <!-- Deploy to HA Modal -->
+    <div id="deployModal" class="modal hidden">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>Deploy to Home Assistant</h2>
+                <button id="closeDeployModalBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px;">This will create or update the automation directly in Home Assistant.</p>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="deployAutomationId">Automation ID (optional)</label>
+                    <input type="text" id="deployAutomationId" placeholder="Leave empty to use ID from YAML or generate new">
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">If the ID exists in HA, the automation will be updated. Otherwise, a new one will be created.</p>
+                </div>
+                <div class="form-group">
+                    <label>YAML Preview</label>
+                    <pre id="deployYamlPreview" class="yaml-output" style="max-height: 300px; overflow-y: auto;"><code></code></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelDeployBtn" class="btn btn-secondary">Cancel</button>
+                <button id="confirmDeployBtn" class="btn btn-primary">Deploy</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // DOM Elements
         const promptInput = document.getElementById('promptInput');
@@ -1662,6 +1720,15 @@
         const deleteAutomationName = document.getElementById('deleteAutomationName');
         const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
         const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+        // Deploy modal elements
+        const deployBtn = document.getElementById('deployBtn');
+        const deployModal = document.getElementById('deployModal');
+        const closeDeployModalBtn = document.getElementById('closeDeployModalBtn');
+        const deployAutomationIdInput = document.getElementById('deployAutomationId');
+        const deployYamlPreview = document.getElementById('deployYamlPreview').querySelector('code');
+        const cancelDeployBtn = document.getElementById('cancelDeployBtn');
+        const confirmDeployBtn = document.getElementById('confirmDeployBtn');
 
         let currentYaml = '';
         let currentPrompt = '';
@@ -1749,6 +1816,15 @@
             confirmDeleteBtn.addEventListener('click', confirmDelete);
             deleteModal.addEventListener('click', (e) => {
                 if (e.target === deleteModal) closeDeleteModal();
+            });
+
+            // Deploy modal
+            deployBtn.addEventListener('click', openDeployModal);
+            closeDeployModalBtn.addEventListener('click', closeDeployModal);
+            cancelDeployBtn.addEventListener('click', closeDeployModal);
+            confirmDeployBtn.addEventListener('click', deployToHA);
+            deployModal.addEventListener('click', (e) => {
+                if (e.target === deployModal) closeDeployModal();
             });
         }
 
@@ -1995,6 +2071,60 @@
             } finally {
                 confirmDeleteBtn.disabled = false;
                 confirmDeleteBtn.textContent = 'Delete';
+            }
+        }
+
+        // Deploy to HA functions
+        function openDeployModal() {
+            if (!currentYaml) {
+                showError('No automation to deploy. Generate one first.');
+                return;
+            }
+            // Try to extract automation ID from YAML
+            const idMatch = currentYaml.match(/^id:\s*["']?([^"'\n]+)["']?/m);
+            deployAutomationIdInput.value = idMatch ? idMatch[1] : '';
+            deployYamlPreview.textContent = currentYaml;
+            deployModal.classList.remove('hidden');
+        }
+
+        function closeDeployModal() {
+            deployModal.classList.add('hidden');
+        }
+
+        async function deployToHA() {
+            if (!currentYaml) return;
+
+            confirmDeployBtn.disabled = true;
+            confirmDeployBtn.textContent = 'Deploying...';
+
+            try {
+                const response = await fetch('./api/deploy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        yaml_content: currentYaml,
+                        automation_id: deployAutomationIdInput.value.trim() || null
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to deploy');
+                }
+
+                closeDeployModal();
+                const action = data.is_new ? 'created' : 'updated';
+                showSuccess(`Automation ${action} in Home Assistant! ID: ${data.automation_id}`);
+
+                // Refresh HA automations list if on doctor tab
+                await loadHAAutomations();
+
+            } catch (error) {
+                showError('Failed to deploy: ' + error.message);
+            } finally {
+                confirmDeployBtn.disabled = false;
+                confirmDeployBtn.textContent = 'Deploy';
             }
         }
 
@@ -2673,7 +2803,10 @@
                         <div class="insight-fix-container" id="fix-${insight.insight_id}">
                             <div class="insight-fix-header">
                                 <span class="insight-fix-label">Suggested Fix:</span>
-                                <button class="insight-copy-btn" data-insight-id="${insight.insight_id}">Copy</button>
+                                <div class="insight-fix-actions">
+                                    <button class="insight-copy-btn" data-insight-id="${insight.insight_id}">Copy</button>
+                                    <button class="insight-apply-btn" data-insight-id="${insight.insight_id}">Apply to HA</button>
+                                </div>
                             </div>
                             <pre class="insight-fix-yaml"></pre>
                         </div>
@@ -2759,6 +2892,26 @@
                     }
                 });
             });
+
+            // Apply to HA button
+            container.querySelectorAll('.insight-apply-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const insightId = btn.dataset.insightId;
+                    const fixContainer = document.getElementById(`fix-${insightId}`);
+                    if (fixContainer) {
+                        const yaml = fixContainer.querySelector('.insight-fix-yaml').textContent;
+                        if (!yaml || yaml.trim() === '') {
+                            showError('No fix to apply. Get a fix suggestion first.');
+                            return;
+                        }
+                        if (confirm('Apply this fix directly to Home Assistant? This will update the automation(s) immediately.')) {
+                            await applyInsightFix(insightId, yaml, btn);
+                        }
+                    }
+                });
+            });
         }
 
         async function copyToClipboard(text) {
@@ -2813,6 +2966,41 @@
                 showError('Failed to get fix: ' + error.message);
                 btn.textContent = originalText;
             } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function applyInsightFix(insightId, yaml, btn) {
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Applying...';
+
+            try {
+                const response = await fetch(`./api/doctor/insights/${insightId}/apply`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ yaml_content: yaml })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to apply fix');
+                }
+
+                btn.textContent = 'Applied!';
+                btn.classList.add('applied');
+                showSuccess(data.message);
+
+                // Refresh insights to show resolved status
+                await loadInsights();
+
+                // Refresh HA automations list
+                await loadHAAutomations();
+
+            } catch (error) {
+                showError('Failed to apply fix: ' + error.message);
+                btn.textContent = originalText;
                 btn.disabled = false;
             }
         }
