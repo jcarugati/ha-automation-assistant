@@ -1871,14 +1871,16 @@
 
         function extractAliasFromYaml(yamlContent) {
             if (!yamlContent) return '';
-            // Match "alias: value" or "alias: 'value'" or 'alias: "value"'
-            const match = yamlContent.match(/^alias:\s*["']?([^"'\n]+)["']?/m);
-            return match ? match[1].trim() : '';
+            // Match alias: value with optional quotes (single or double)
+            const match = yamlContent.match(/^alias:\s*(?:["'](.+?)["']|(.+?))$/m);
+            return match ? (match[1] || match[2] || '').trim() : '';
         }
 
         function openSaveModal() {
             // Extract alias from generated YAML as suggested name
             const suggestedName = extractAliasFromYaml(currentYaml);
+            console.log('currentYaml:', currentYaml?.substring(0, 100));
+            console.log('Extracted alias:', suggestedName);
             automationNameInput.value = suggestedName;
             saveModal.classList.remove('hidden');
             automationNameInput.focus();
