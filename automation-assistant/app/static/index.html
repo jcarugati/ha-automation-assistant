@@ -2468,9 +2468,13 @@
                 const data = await response.json();
                 editingHAAutomationId = automationId;
 
+                // API returns: { automation: {...}, yaml: "...", traces: [...] }
+                const alias = data.automation?.alias || 'Unnamed';
+                const yamlContent = data.yaml || '';
+
                 // Update UI
-                editAutomationTitle.textContent = `Editing: ${data.alias || 'Unnamed'}`;
-                yamlEditor.value = data.yaml_content;
+                editAutomationTitle.textContent = `Editing: ${alias}`;
+                yamlEditor.value = yamlContent;
                 yamlEditor.disabled = false;
                 editValidationResult.classList.add('hidden');
 
