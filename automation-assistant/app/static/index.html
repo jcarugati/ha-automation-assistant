@@ -1359,6 +1359,185 @@
             visibility: visible;
         }
 
+        /* Two-panel layout for Create tab */
+        .create-layout {
+            display: flex;
+            gap: 24px;
+            min-height: 500px;
+        }
+
+        .automation-list-panel {
+            width: 280px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-panel {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .automation-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .automation-list-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .automation-count {
+            color: var(--text-secondary);
+            font-weight: normal;
+        }
+
+        .btn-create-new {
+            width: 100%;
+            margin-bottom: 16px;
+            background: var(--primary-color);
+            color: white;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+
+        .btn-create-new:hover {
+            background: var(--primary-dark);
+        }
+
+        .ha-automation-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ha-automation-item {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .ha-automation-item:hover {
+            background: var(--border-color);
+        }
+
+        .ha-automation-item.selected {
+            border-color: var(--primary-color);
+            background: rgba(3, 169, 244, 0.1);
+        }
+
+        .ha-automation-item-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+
+        .ha-automation-item-id {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .ha-automation-item-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            margin-top: 6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .ha-automation-item-status.enabled {
+            background: rgba(76, 175, 80, 0.2);
+            color: var(--success-color);
+        }
+
+        .ha-automation-item-status.disabled {
+            background: rgba(158, 158, 158, 0.2);
+            color: var(--text-secondary);
+        }
+
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .editor-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .editor-mode-indicator {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .editor-mode-indicator.editing {
+            color: var(--primary-color);
+        }
+
+        .yaml-editor {
+            width: 100%;
+            padding: 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', Monaco, 'Courier New', monospace;
+            background: var(--code-bg);
+            color: #a5d6a7;
+            resize: vertical;
+            min-height: 300px;
+            line-height: 1.5;
+        }
+
+        .yaml-editor:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-cancel-edit {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-cancel-edit:hover {
+            background: var(--border-color);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -1399,6 +1578,15 @@
 
             .header-text h1 {
                 font-size: 20px;
+            }
+
+            .create-layout {
+                flex-direction: column;
+            }
+
+            .automation-list-panel {
+                width: 100%;
+                max-height: 250px;
             }
         }
     </style>
@@ -1460,39 +1648,86 @@
 
                 <!-- Create Mode -->
                 <div id="createMode" class="tab-content active">
-                <div class="card">
-                    <label for="promptInput">Describe the automation you want to create</label>
-                    <textarea
-                        id="promptInput"
-                        placeholder="Example: Turn on the living room lights when motion is detected after sunset and turn them off after 5 minutes of no motion"
-                    ></textarea>
-                    <button id="generateBtn" class="btn btn-primary">Generate Automation</button>
-                </div>
+                    <div id="errorMessage" class="error hidden"></div>
+                    <div id="successMessage" class="success-message hidden"></div>
 
-                <div id="loadingIndicator" class="card loading hidden">
-                    <div class="spinner"></div>
-                    <span>Generating your automation...</span>
-                </div>
+                    <div class="create-layout">
+                        <!-- Left Panel: Automation List -->
+                        <div class="automation-list-panel card">
+                            <div class="automation-list-header">
+                                <h3>Your Automations <span id="haAutomationCount" class="automation-count"></span></h3>
+                            </div>
+                            <button id="createNewBtn" class="btn-create-new">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                Create New
+                            </button>
+                            <div id="haAutomationList" class="ha-automation-list">
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    <span>Loading automations...</span>
+                                </div>
+                            </div>
+                        </div>
 
-                <div id="errorMessage" class="error hidden"></div>
-                <div id="successMessage" class="success-message hidden"></div>
+                        <!-- Right Panel: Editor -->
+                        <div class="editor-panel">
+                            <!-- Create New Mode -->
+                            <div id="createNewPanel" class="card">
+                                <div class="editor-header">
+                                    <h3>Create New Automation</h3>
+                                    <span class="editor-mode-indicator">Generate from prompt</span>
+                                </div>
+                                <label for="promptInput">Describe the automation you want to create</label>
+                                <textarea
+                                    id="promptInput"
+                                    placeholder="Example: Turn on the living room lights when motion is detected after sunset and turn them off after 5 minutes of no motion"
+                                ></textarea>
+                                <button id="generateBtn" class="btn btn-primary">Generate Automation</button>
+                            </div>
 
-                <div id="resultSection" class="card result-section hidden">
-                    <h3>Explanation</h3>
-                    <div id="explanation" class="explanation"></div>
+                            <div id="loadingIndicator" class="card loading hidden">
+                                <div class="spinner"></div>
+                                <span>Generating your automation...</span>
+                            </div>
 
-                    <div class="yaml-header">
-                        <h3>Generated YAML</h3>
-                        <div class="yaml-actions">
-                            <button id="validateBtn" class="btn btn-secondary btn-small">Validate</button>
-                            <button id="copyBtn" class="btn btn-secondary btn-small">Copy</button>
-                            <button id="saveBtn" class="btn btn-success btn-small">Save</button>
-                            <button id="deployBtn" class="btn btn-primary btn-small">Deploy to HA</button>
+                            <div id="resultSection" class="card result-section hidden">
+                                <h3>Explanation</h3>
+                                <div id="explanation" class="explanation"></div>
+
+                                <div class="yaml-header">
+                                    <h3>Generated YAML</h3>
+                                    <div class="yaml-actions">
+                                        <button id="validateBtn" class="btn btn-secondary btn-small">Validate</button>
+                                        <button id="copyBtn" class="btn btn-secondary btn-small">Copy</button>
+                                        <button id="saveBtn" class="btn btn-success btn-small">Save</button>
+                                        <button id="deployBtn" class="btn btn-primary btn-small">Deploy to HA</button>
+                                    </div>
+                                </div>
+                                <pre id="yamlOutput" class="yaml-output"><code></code></pre>
+                                <div id="validationResult" class="validation-result hidden"></div>
+                            </div>
+
+                            <!-- Edit Existing Mode -->
+                            <div id="editExistingPanel" class="card hidden">
+                                <div class="editor-header">
+                                    <h3 id="editAutomationTitle">Editing Automation</h3>
+                                    <span class="editor-mode-indicator editing">Editing existing</span>
+                                </div>
+                                <label for="yamlEditor">Automation YAML</label>
+                                <textarea id="yamlEditor" class="yaml-editor"></textarea>
+                                <div id="editValidationResult" class="validation-result hidden"></div>
+                                <div class="editor-actions">
+                                    <button id="cancelEditBtn" class="btn btn-cancel-edit">Cancel</button>
+                                    <button id="validateEditBtn" class="btn btn-secondary">Validate</button>
+                                    <button id="copyEditBtn" class="btn btn-secondary">Copy</button>
+                                    <button id="saveToHABtn" class="btn btn-primary">Save to HA</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <pre id="yamlOutput" class="yaml-output"><code></code></pre>
-                    <div id="validationResult" class="validation-result hidden"></div>
-                </div>
                 </div>
 
                 <!-- Doctor Mode -->
@@ -1736,6 +1971,10 @@
         let currentAutomationName = null;
         let deleteAutomationId = null;
 
+        // Edit mode state
+        let editingHAAutomationId = null;
+        let haAutomationsList = [];
+
         // Doctor mode elements
         const automationSelect = document.getElementById('automationSelect');
         const diagnoseBtn = document.getElementById('diagnoseBtn');
@@ -1748,6 +1987,20 @@
         const yamlToggle = document.getElementById('yamlToggle');
         const yamlCollapsible = document.getElementById('yamlCollapsible');
         const yamlToggleIcon = document.getElementById('yamlToggleIcon');
+
+        // Create tab - Automation list elements
+        const createNewBtn = document.getElementById('createNewBtn');
+        const haAutomationList = document.getElementById('haAutomationList');
+        const haAutomationCount = document.getElementById('haAutomationCount');
+        const createNewPanel = document.getElementById('createNewPanel');
+        const editExistingPanel = document.getElementById('editExistingPanel');
+        const editAutomationTitle = document.getElementById('editAutomationTitle');
+        const yamlEditor = document.getElementById('yamlEditor');
+        const editValidationResult = document.getElementById('editValidationResult');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const validateEditBtn = document.getElementById('validateEditBtn');
+        const copyEditBtn = document.getElementById('copyEditBtn');
+        const saveToHABtn = document.getElementById('saveToHABtn');
 
         // Batch diagnosis elements
         const runBatchBtn = document.getElementById('runBatchBtn');
@@ -1770,6 +2023,7 @@
             loadContextSummary();
             loadSavedAutomations();
             loadHAAutomations();
+            loadHAAutomationsForCreate();
             setupEventListeners();
             setupTabs();
             loadScheduleInfo();
@@ -1826,6 +2080,13 @@
             deployModal.addEventListener('click', (e) => {
                 if (e.target === deployModal) closeDeployModal();
             });
+
+            // Create tab - automation list
+            createNewBtn.addEventListener('click', showCreateNewMode);
+            cancelEditBtn.addEventListener('click', cancelEdit);
+            validateEditBtn.addEventListener('click', validateEditYaml);
+            copyEditBtn.addEventListener('click', copyEditYaml);
+            saveToHABtn.addEventListener('click', saveEditToHA);
         }
 
         // Sidebar functions
@@ -2117,14 +2378,241 @@
                 const action = data.is_new ? 'created' : 'updated';
                 showSuccess(`Automation ${action} in Home Assistant! ID: ${data.automation_id}`);
 
-                // Refresh HA automations list if on doctor tab
+                // Refresh HA automations lists
                 await loadHAAutomations();
+                await loadHAAutomationsForCreate();
 
             } catch (error) {
                 showError('Failed to deploy: ' + error.message);
             } finally {
                 confirmDeployBtn.disabled = false;
                 confirmDeployBtn.textContent = 'Deploy';
+            }
+        }
+
+        // Create tab - HA Automations list functions
+        async function loadHAAutomationsForCreate() {
+            try {
+                const response = await fetch('./api/ha-automations');
+                if (response.ok) {
+                    const data = await response.json();
+                    haAutomationsList = data.automations;
+                    renderHAAutomationList(haAutomationsList);
+                } else {
+                    haAutomationList.innerHTML = '<div class="empty-state"><p class="empty-state-text">Failed to load automations</p></div>';
+                }
+            } catch (error) {
+                console.error('Failed to load HA automations:', error);
+                haAutomationList.innerHTML = '<div class="empty-state"><p class="empty-state-text">Failed to load automations</p></div>';
+            }
+        }
+
+        function renderHAAutomationList(automations) {
+            haAutomationCount.textContent = `(${automations.length})`;
+
+            if (automations.length === 0) {
+                haAutomationList.innerHTML = '<div class="empty-state"><p class="empty-state-text">No automations in Home Assistant.<br>Create your first one!</p></div>';
+                return;
+            }
+
+            haAutomationList.innerHTML = automations.map(a => {
+                const isEnabled = a.state !== 'off';
+                const selectedClass = editingHAAutomationId === a.id ? 'selected' : '';
+                return `
+                    <div class="ha-automation-item ${selectedClass}" data-id="${a.id}">
+                        <div class="ha-automation-item-name">${escapeHtml(a.alias || 'Unnamed')}</div>
+                        <div class="ha-automation-item-id">${escapeHtml(a.id)}</div>
+                        <span class="ha-automation-item-status ${isEnabled ? 'enabled' : 'disabled'}">
+                            ${isEnabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers
+            haAutomationList.querySelectorAll('.ha-automation-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    loadHAAutomationForEdit(item.dataset.id);
+                });
+            });
+        }
+
+        function showCreateNewMode() {
+            editingHAAutomationId = null;
+            createNewPanel.classList.remove('hidden');
+            resultSection.classList.add('hidden');
+            editExistingPanel.classList.add('hidden');
+            promptInput.value = '';
+            promptInput.focus();
+
+            // Update selection in list
+            haAutomationList.querySelectorAll('.ha-automation-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+        }
+
+        async function loadHAAutomationForEdit(automationId) {
+            try {
+                // Show loading state
+                editExistingPanel.classList.remove('hidden');
+                createNewPanel.classList.add('hidden');
+                resultSection.classList.add('hidden');
+                yamlEditor.value = 'Loading...';
+                yamlEditor.disabled = true;
+
+                const response = await fetch(`./api/ha-automations/${automationId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load automation');
+                }
+
+                const data = await response.json();
+                editingHAAutomationId = automationId;
+
+                // Update UI
+                editAutomationTitle.textContent = `Editing: ${data.alias || 'Unnamed'}`;
+                yamlEditor.value = data.yaml_content;
+                yamlEditor.disabled = false;
+                editValidationResult.classList.add('hidden');
+
+                // Update selection in list
+                haAutomationList.querySelectorAll('.ha-automation-item').forEach(item => {
+                    item.classList.toggle('selected', item.dataset.id === automationId);
+                });
+
+            } catch (error) {
+                showError('Failed to load automation: ' + error.message);
+                yamlEditor.value = '';
+                yamlEditor.disabled = false;
+            }
+        }
+
+        function cancelEdit() {
+            editingHAAutomationId = null;
+            editExistingPanel.classList.add('hidden');
+            createNewPanel.classList.remove('hidden');
+            editValidationResult.classList.add('hidden');
+
+            // Clear selection in list
+            haAutomationList.querySelectorAll('.ha-automation-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+        }
+
+        async function validateEditYaml() {
+            const yaml = yamlEditor.value.trim();
+            if (!yaml) return;
+
+            try {
+                const response = await fetch('./api/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ yaml_content: yaml }),
+                });
+
+                const data = await response.json();
+                showEditValidation(data);
+
+            } catch (error) {
+                showEditValidation({ valid: false, errors: [error.message] });
+            }
+        }
+
+        function showEditValidation(result) {
+            editValidationResult.classList.remove('hidden', 'valid', 'invalid');
+
+            if (result.valid) {
+                editValidationResult.classList.add('valid');
+                editValidationResult.textContent = 'Valid automation YAML - ready to save!';
+            } else {
+                editValidationResult.classList.add('invalid');
+                editValidationResult.innerHTML = '<strong>Validation errors:</strong><br>' +
+                    result.errors.map(e => '- ' + e).join('<br>');
+            }
+        }
+
+        function copyEditYaml() {
+            const yaml = yamlEditor.value;
+            if (!yaml) return;
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(yaml).then(() => {
+                    showEditCopySuccess();
+                }).catch(() => {
+                    fallbackEditCopy(yaml);
+                });
+            } else {
+                fallbackEditCopy(yaml);
+            }
+        }
+
+        function fallbackEditCopy(yaml) {
+            const textArea = document.createElement('textarea');
+            textArea.value = yaml;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showEditCopySuccess();
+            } catch (err) {
+                showError('Failed to copy to clipboard');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function showEditCopySuccess() {
+            const originalText = copyEditBtn.textContent;
+            copyEditBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyEditBtn.textContent = originalText;
+            }, 2000);
+        }
+
+        async function saveEditToHA() {
+            const yaml = yamlEditor.value.trim();
+            if (!yaml) {
+                showError('No YAML to save');
+                return;
+            }
+
+            if (!editingHAAutomationId) {
+                showError('No automation selected');
+                return;
+            }
+
+            saveToHABtn.disabled = true;
+            saveToHABtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch('./api/deploy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        yaml_content: yaml,
+                        automation_id: editingHAAutomationId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to save');
+                }
+
+                showSuccess(`Automation updated in Home Assistant!`);
+
+                // Refresh the automations list
+                await loadHAAutomationsForCreate();
+                await loadHAAutomations();
+
+            } catch (error) {
+                showError('Failed to save: ' + error.message);
+            } finally {
+                saveToHABtn.disabled = false;
+                saveToHABtn.textContent = 'Save to HA';
             }
         }
 
@@ -2805,7 +3293,7 @@
                                 <span class="insight-fix-label">Suggested Fix:</span>
                                 <div class="insight-fix-actions">
                                     <button class="insight-copy-btn" data-insight-id="${insight.insight_id}">Copy</button>
-                                    <button class="insight-apply-btn" data-insight-id="${insight.insight_id}">Apply to HA</button>
+                                    <button class="insight-apply-btn" data-insight-id="${insight.insight_id}">Apply Fix to HA</button>
                                 </div>
                             </div>
                             <pre class="insight-fix-yaml"></pre>
@@ -2906,7 +3394,7 @@
                             showError('No fix to apply. Get a fix suggestion first.');
                             return;
                         }
-                        if (confirm('Apply this fix directly to Home Assistant? This will update the automation(s) immediately.')) {
+                        if (confirm('Apply Fix to HA: This will update the automation in Home Assistant. Continue?')) {
                             await applyInsightFix(insightId, yaml, btn);
                         }
                     }
@@ -2995,8 +3483,9 @@
                 // Refresh insights to show resolved status
                 await loadInsights();
 
-                // Refresh HA automations list
+                // Refresh HA automations lists
                 await loadHAAutomations();
+                await loadHAAutomationsForCreate();
 
             } catch (error) {
                 showError('Failed to apply fix: ' + error.message);
