@@ -32,6 +32,7 @@ from .models import (
     HealthResponse,
     Insight,
     InsightsList,
+    ModifyAutomationRequest,
     SaveAutomationRequest,
     SavedAutomation,
     SavedAutomationList,
@@ -115,6 +116,24 @@ async def generate_automation(request: AutomationRequest):
 
     if not result.success:
         logger.error(f"Generation failed: {result.error}")
+
+    return result
+
+
+@app.post("/api/modify", response_model=AutomationResponse)
+async def modify_automation(request: ModifyAutomationRequest):
+    """Modify an existing automation using natural language."""
+    if not config.is_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="Claude API key not configured. Please configure in add-on settings.",
+        )
+
+    logger.info(f"Modifying automation with request: {request.prompt[:100]}...")
+    result = await automation_generator.modify(request.existing_yaml, request.prompt)
+
+    if not result.success:
+        logger.error(f"Modification failed: {result.error}")
 
     return result
 

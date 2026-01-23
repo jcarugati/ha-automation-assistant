@@ -9,7 +9,7 @@ import yaml
 from .ha_client import ha_client
 from .llm.claude import AsyncClaudeClient
 from .models import AutomationResponse, ValidationResponse
-from .prompts import build_system_prompt, build_user_prompt
+from .prompts import build_modify_user_prompt, build_system_prompt, build_user_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,51 @@ class AutomationGenerator:
 
         except Exception as e:
             logger.error(f"Failed to generate automation: {e}")
+            return AutomationResponse(
+                success=False,
+                response="",
+                yaml_content=None,
+                error=str(e),
+            )
+
+    async def modify(self, existing_yaml: str, modification_request: str) -> AutomationResponse:
+        """Modify an existing automation based on a natural language request.
+
+        Args:
+            existing_yaml: The current YAML of the automation.
+            modification_request: The user's natural language modification request.
+
+        Returns:
+            AutomationResponse with the modified YAML and explanation.
+        """
+        try:
+            # Fetch HA context
+            context = await ha_client.get_full_context()
+
+            # Build prompts
+            system_prompt = build_system_prompt(context)
+            user_prompt = build_modify_user_prompt(existing_yaml, modification_request)
+
+            logger.debug(f"System prompt length: {len(system_prompt)}")
+            logger.debug(f"Modification request: {modification_request}")
+
+            # Call LLM
+            response = await self.llm_client.generate_automation(
+                system_prompt, user_prompt
+            )
+
+            # Extract YAML
+            yaml_content = extract_yaml_from_response(response)
+
+            return AutomationResponse(
+                success=True,
+                response=response,
+                yaml_content=yaml_content,
+                error=None,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to modify automation: {e}")
             return AutomationResponse(
                 success=False,
                 response="",

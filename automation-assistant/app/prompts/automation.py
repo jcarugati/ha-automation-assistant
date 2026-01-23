@@ -163,3 +163,23 @@ def build_user_prompt(user_request: str) -> str:
 {user_request}
 
 Provide a complete, ready-to-use automation YAML that I can copy directly into my Home Assistant configuration."""
+
+
+def build_modify_user_prompt(existing_yaml: str, modification_request: str) -> str:
+    """Build the user prompt for modifying an existing automation."""
+    return f"""I have an existing Home Assistant automation that I want to modify. Please update it according to my request while preserving its core functionality, ID, and alias (unless I specifically ask to change them).
+
+## Current Automation YAML:
+```yaml
+{existing_yaml}
+```
+
+## Modification Request:
+{modification_request}
+
+Please provide:
+1. A brief explanation of what changes you made
+2. The complete updated automation YAML in a code block (not just the changes, but the full automation)
+3. Any notes about the modifications
+
+IMPORTANT: Keep the same automation ID and preserve the general structure unless the modification specifically requires changing it."""

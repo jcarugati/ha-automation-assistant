@@ -12,6 +12,13 @@ class AutomationRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Natural language automation request")
 
 
+class ModifyAutomationRequest(BaseModel):
+    """Request model for modifying an existing automation."""
+
+    prompt: str = Field(..., min_length=1, description="Natural language modification request")
+    existing_yaml: str = Field(..., min_length=1, description="Current YAML of the automation to modify")
+
+
 class AutomationResponse(BaseModel):
     """Response model for generated automation."""
 

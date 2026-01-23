@@ -1538,6 +1538,49 @@
             background: var(--border-color);
         }
 
+        /* AI Modification Section */
+        .ai-modify-section {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .ai-modify-input-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .modify-prompt-input {
+            flex: 1;
+            min-height: 60px;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            resize: vertical;
+        }
+
+        .modify-prompt-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .modify-prompt-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .btn-modify-ai {
+            flex-shrink: 0;
+            margin-top: 0;
+            width: auto;
+            padding: 12px 20px;
+            white-space: nowrap;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -1716,6 +1759,25 @@
                                     <h3 id="editAutomationTitle">Editing Automation</h3>
                                     <span class="editor-mode-indicator editing">Editing existing</span>
                                 </div>
+
+                                <!-- AI Modification Section -->
+                                <div class="ai-modify-section">
+                                    <label for="modifyPromptInput">Modify with AI</label>
+                                    <div class="ai-modify-input-row">
+                                        <textarea
+                                            id="modifyPromptInput"
+                                            class="modify-prompt-input"
+                                            placeholder="Describe the changes you want, e.g., 'Add a 5 minute delay before turning off' or 'Only trigger when it's dark outside'"
+                                        ></textarea>
+                                        <button id="modifyWithAIBtn" class="btn btn-primary btn-modify-ai">Modify with AI</button>
+                                    </div>
+                                </div>
+
+                                <div id="modifyLoading" class="loading hidden" style="padding: 16px;">
+                                    <div class="spinner"></div>
+                                    <span>Modifying automation...</span>
+                                </div>
+
                                 <label for="yamlEditor">Automation YAML</label>
                                 <textarea id="yamlEditor" class="yaml-editor"></textarea>
                                 <div id="editValidationResult" class="validation-result hidden"></div>
@@ -2001,6 +2063,9 @@
         const validateEditBtn = document.getElementById('validateEditBtn');
         const copyEditBtn = document.getElementById('copyEditBtn');
         const saveToHABtn = document.getElementById('saveToHABtn');
+        const modifyPromptInput = document.getElementById('modifyPromptInput');
+        const modifyWithAIBtn = document.getElementById('modifyWithAIBtn');
+        const modifyLoading = document.getElementById('modifyLoading');
 
         // Batch diagnosis elements
         const runBatchBtn = document.getElementById('runBatchBtn');
@@ -2087,6 +2152,7 @@
             validateEditBtn.addEventListener('click', validateEditYaml);
             copyEditBtn.addEventListener('click', copyEditYaml);
             saveToHABtn.addEventListener('click', saveEditToHA);
+            modifyWithAIBtn.addEventListener('click', modifyWithAI);
         }
 
         // Sidebar functions
@@ -2617,6 +2683,64 @@
             } finally {
                 saveToHABtn.disabled = false;
                 saveToHABtn.textContent = 'Save to HA';
+            }
+        }
+
+        async function modifyWithAI() {
+            const prompt = modifyPromptInput.value.trim();
+            const existingYaml = yamlEditor.value.trim();
+
+            if (!prompt) {
+                showError('Please describe the changes you want to make');
+                modifyPromptInput.focus();
+                return;
+            }
+
+            if (!existingYaml) {
+                showError('No automation YAML to modify');
+                return;
+            }
+
+            modifyWithAIBtn.disabled = true;
+            modifyLoading.classList.remove('hidden');
+            yamlEditor.disabled = true;
+            hideError();
+
+            try {
+                const response = await fetch('./api/modify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        existing_yaml: existingYaml
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to modify automation');
+                }
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Modification failed');
+                }
+
+                // Update the YAML editor with the modified content
+                if (data.yaml_content) {
+                    yamlEditor.value = data.yaml_content;
+                    showSuccess('Automation modified! Review the changes and click "Save to HA" to apply.');
+                    modifyPromptInput.value = '';
+                } else {
+                    showError('No YAML returned from modification');
+                }
+
+            } catch (error) {
+                showError('Failed to modify: ' + error.message);
+            } finally {
+                modifyWithAIBtn.disabled = false;
+                modifyLoading.classList.add('hidden');
+                yamlEditor.disabled = false;
             }
         }
 
