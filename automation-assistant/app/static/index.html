@@ -1209,7 +1209,7 @@
         // API Functions
         async function loadAutomations() {
             try {
-                const res = await fetch('/api/ha-automations');
+                const res = await fetch('api/ha-automations');
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
                 }
@@ -1231,7 +1231,7 @@
 
         async function loadInsights() {
             try {
-                const res = await fetch('/api/doctor/insights');
+                const res = await fetch('api/doctor/insights');
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
                 }
@@ -1246,7 +1246,7 @@
 
         async function loadSchedule() {
             try {
-                const res = await fetch('/api/doctor/schedule');
+                const res = await fetch('api/doctor/schedule');
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
                 }
@@ -1266,7 +1266,7 @@
 
         async function loadLatestReport() {
             try {
-                const res = await fetch('/api/doctor/reports/latest');
+                const res = await fetch('api/doctor/reports/latest');
                 if (res.ok) {
                     const report = await res.json();
                     const runAt = new Date(report.run_at);
@@ -1532,7 +1532,7 @@
 
         async function loadAutomationDetails(id) {
             try {
-                const res = await fetch(`/api/ha-automations/${id}`);
+                const res = await fetch(`api/ha-automations/${id}`);
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
                 }
@@ -1696,7 +1696,7 @@
             document.getElementById('createError').classList.add('hidden');
 
             try {
-                const res = await fetch('/api/generate', {
+                const res = await fetch('api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt })
@@ -1727,7 +1727,7 @@
             section.classList.remove('hidden');
 
             try {
-                const res = await fetch('/api/doctor/diagnose', {
+                const res = await fetch('api/doctor/diagnose', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ automation_id: currentAutomation.id })
@@ -1754,7 +1754,7 @@
             document.getElementById('modifyLoading').classList.remove('hidden');
 
             try {
-                const res = await fetch('/api/modify', {
+                const res = await fetch('api/modify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt, existing_yaml: yaml })
@@ -1781,7 +1781,7 @@
             const yaml = document.getElementById('detailYaml').value;
 
             try {
-                const res = await fetch('/api/deploy', {
+                const res = await fetch('api/deploy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1812,7 +1812,7 @@
             document.getElementById('insightsLoading')?.classList.remove('hidden');
 
             try {
-                const res = await fetch('/api/doctor/run-batch', { method: 'POST' });
+                const res = await fetch('api/doctor/run-batch', { method: 'POST' });
                 const data = await res.json();
 
                 await loadInsights();
@@ -1832,7 +1832,7 @@
             const time = document.getElementById('scheduleTime').value;
 
             try {
-                await fetch('/api/doctor/schedule', {
+                await fetch('api/doctor/schedule', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled, time })
@@ -1852,7 +1852,7 @@
             const resultEl = document.getElementById(source === 'create' ? 'createValidation' : 'detailValidation');
 
             try {
-                const res = await fetch('/api/validate', {
+                const res = await fetch('api/validate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ yaml_content: yaml })
@@ -1897,7 +1897,7 @@
             const id = document.getElementById('deployId').value.trim() || null;
 
             try {
-                const res = await fetch('/api/deploy', {
+                const res = await fetch('api/deploy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ yaml_content: yaml, automation_id: id })
@@ -1919,7 +1919,7 @@
 
         async function resolveInsight(insightId, resolved) {
             try {
-                await fetch(`/api/doctor/insights/${insightId}/resolve?resolved=${resolved}`, {
+                await fetch(`api/doctor/insights/${insightId}/resolve?resolved=${resolved}`, {
                     method: 'PUT'
                 });
                 await loadInsights();
