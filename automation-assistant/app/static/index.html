@@ -1232,17 +1232,24 @@
         async function loadInsights() {
             try {
                 const res = await fetch('/api/doctor/insights');
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
                 insights = await res.json();
                 updateInsightsBadge();
                 renderInsights();
             } catch (e) {
                 console.error('Failed to load insights:', e);
+                insights = { single_automation: [], multi_automation: [] };
             }
         }
 
         async function loadSchedule() {
             try {
                 const res = await fetch('/api/doctor/schedule');
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
                 const data = await res.json();
                 document.getElementById('scheduleEnabled').checked = data.enabled;
                 document.getElementById('scheduleTime').value = data.time || '03:00';
@@ -1334,9 +1341,11 @@
 
             // Status filter
             if (currentFilter === 'issues') {
+                const singleAuto = insights.single_automation || [];
+                const multiAuto = insights.multi_automation || [];
                 const issueIds = new Set([
-                    ...insights.single_automation.flatMap(i => i.automation_ids),
-                    ...insights.multi_automation.flatMap(i => i.automation_ids)
+                    ...singleAuto.flatMap(i => i.automation_ids),
+                    ...multiAuto.flatMap(i => i.automation_ids)
                 ]);
                 filtered = filtered.filter(a => issueIds.has(a.id));
             } else if (currentFilter === 'disabled') {
@@ -1380,13 +1389,15 @@
         function getAutomationStatus(auto) {
             if (auto.state === 'off') return 'disabled';
 
+            const singleAuto = insights.single_automation || [];
+            const multiAuto = insights.multi_automation || [];
             const hasIssues = [
-                ...insights.single_automation,
-                ...insights.multi_automation
+                ...singleAuto,
+                ...multiAuto
             ].some(i => i.automation_ids.includes(auto.id) && !i.resolved);
 
             if (hasIssues) {
-                const critical = insights.single_automation.some(
+                const critical = singleAuto.some(
                     i => i.automation_ids.includes(auto.id) && i.severity === 'critical' && !i.resolved
                 );
                 return critical ? 'error' : 'warning';
@@ -1399,9 +1410,11 @@
             const total = automations.length;
             const disabled = automations.filter(a => a.state === 'off').length;
 
+            const singleAuto = insights.single_automation || [];
+            const multiAuto = insights.multi_automation || [];
             const issueIds = new Set([
-                ...insights.single_automation.filter(i => !i.resolved).flatMap(i => i.automation_ids),
-                ...insights.multi_automation.filter(i => !i.resolved).flatMap(i => i.automation_ids)
+                ...singleAuto.filter(i => !i.resolved).flatMap(i => i.automation_ids),
+                ...multiAuto.filter(i => !i.resolved).flatMap(i => i.automation_ids)
             ]);
             const withIssues = automations.filter(a => issueIds.has(a.id)).length;
             const healthy = total - disabled - withIssues;
@@ -1520,6 +1533,9 @@
         async function loadAutomationDetails(id) {
             try {
                 const res = await fetch(`/api/ha-automations/${id}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
                 const data = await res.json();
 
                 // Set YAML
@@ -1529,9 +1545,11 @@
                 renderExecutions(data.traces || []);
 
                 // Check for issues
+                const singleAuto = insights.single_automation || [];
+                const multiAuto = insights.multi_automation || [];
                 const autoInsights = [
-                    ...insights.single_automation,
-                    ...insights.multi_automation
+                    ...singleAuto,
+                    ...multiAuto
                 ].filter(i => i.automation_ids.includes(id) && !i.resolved);
 
                 const healthIcon = document.getElementById('healthIcon');
