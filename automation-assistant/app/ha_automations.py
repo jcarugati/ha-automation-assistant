@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from .ha_client import ha_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,15 +54,54 @@ class HAAutomationReader:
             return {}
 
     async def list_automations(self) -> list[dict[str, Any]]:
-        """List all automations with basic info."""
+        """List all automations with basic info including area data and state."""
         automations = self._read_automations_file()
+
+        # Fetch entity registry and areas for enrichment
+        try:
+            entity_registry = await ha_client.get_entity_registry()
+            areas = await ha_client.get_areas()
+            states = await ha_client.get_states()
+        except Exception as e:
+            logger.warning(f"Failed to fetch enrichment data: {e}")
+            entity_registry = []
+            areas = []
+            states = []
+
+        # Build lookup maps
+        area_map = {a.get("area_id"): a.get("name", "") for a in areas}
+        entity_map = {
+            e.get("entity_id"): e
+            for e in entity_registry
+            if e.get("entity_id", "").startswith("automation.")
+        }
+        state_map = {
+            s.get("entity_id"): s.get("state", "unknown")
+            for s in states
+            if s.get("entity_id", "").startswith("automation.")
+        }
+
         result = []
         for auto in automations:
+            auto_id = auto.get("id", "")
+            entity_id = f"automation.{auto_id}"
+
+            # Get area info from entity registry
+            entity_info = entity_map.get(entity_id, {})
+            area_id = entity_info.get("area_id")
+            area_name = area_map.get(area_id) if area_id else None
+
+            # Get state (on/off)
+            state = state_map.get(entity_id, "unknown")
+
             result.append({
-                "id": auto.get("id", ""),
+                "id": auto_id,
                 "alias": auto.get("alias", "Unnamed Automation"),
                 "description": auto.get("description", ""),
                 "mode": auto.get("mode", "single"),
+                "area_id": area_id,
+                "area_name": area_name,
+                "state": state,
             })
         return result
 

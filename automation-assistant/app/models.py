@@ -110,6 +110,9 @@ class HAAutomationSummary(BaseModel):
     alias: str = Field(..., description="Automation alias/name")
     description: str | None = Field(None, description="Automation description")
     mode: str | None = Field(None, description="Automation mode")
+    area_id: str | None = Field(None, description="Area ID from entity registry")
+    area_name: str | None = Field(None, description="Area name")
+    state: str | None = Field(None, description="Automation state (on/off)")
 
 
 class HAAutomationList(BaseModel):
