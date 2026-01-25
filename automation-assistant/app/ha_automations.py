@@ -85,25 +85,41 @@ class HAAutomationReader:
             for e in entity_registry
             if e.get("entity_id", "").startswith("automation.")
         }
+        unique_id_map = {
+            e.get("unique_id"): e.get("entity_id")
+            for e in entity_registry
+            if e.get("entity_id", "").startswith("automation.") and e.get("unique_id")
+        }
         state_map = {
             s.get("entity_id"): s.get("state", "unknown")
             for s in states
             if s.get("entity_id", "").startswith("automation.")
         }
+        state_id_map = {
+            s.get("attributes", {}).get("id"): s.get("entity_id")
+            for s in states
+            if s.get("entity_id", "").startswith("automation.")
+            and s.get("attributes", {}).get("id")
+        }
 
         result = []
         for auto in automations:
             auto_id = auto.get("id", "")
-            # Use _entity_id from API response if available, otherwise construct from id
-            entity_id = auto.get("_entity_id") or f"automation.{auto_id}"
+            # Prefer entity_id from API response or registry/state mappings
+            entity_id = (
+                auto.get("_entity_id")
+                or unique_id_map.get(auto_id)
+                or state_id_map.get(auto_id)
+                or (f"automation.{auto_id}" if auto_id else None)
+            )
 
             # Get area info from entity registry
-            entity_info = entity_map.get(entity_id, {})
+            entity_info = entity_map.get(entity_id, {}) if entity_id else {}
             area_id = entity_info.get("area_id")
             area_name = area_map.get(area_id) if area_id else None
 
             # Get state (on/off)
-            state = state_map.get(entity_id, "unknown")
+            state = state_map.get(entity_id, "unknown") if entity_id else "unknown"
 
             result.append({
                 "id": auto_id,

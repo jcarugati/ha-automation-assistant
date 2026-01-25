@@ -26,7 +26,7 @@ class Config:
     supervisor_token: str
     ha_base_url: str = "http://supervisor/core"
     supervisor_base_url: str = "http://supervisor"
-    ha_ws_url: str = "ws://supervisor/core/websocket"
+    ha_ws_url: str = "ws://supervisor/core/api/websocket"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -43,7 +43,7 @@ class Config:
             ha_ws_url = f"{ws_url}/api/websocket"
         else:
             ha_base_url = "http://supervisor/core"
-            ha_ws_url = "ws://supervisor/core/websocket"
+            ha_ws_url = "ws://supervisor/core/api/websocket"
         
         return cls(
             claude_api_key=os.environ.get("CLAUDE_API_KEY", ""),
