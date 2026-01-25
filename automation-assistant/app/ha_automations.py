@@ -97,6 +97,18 @@ class HAAutomationReader:
 
         return start, finish
 
+    def _unwrap_trace_payload(self, trace: dict[str, Any]) -> dict[str, Any]:
+        """Extract the real trace payload when stored under short_dict/extended_dict."""
+        payload = trace.get("extended_dict") or trace.get("short_dict")
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, str):
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
     def _extract_trigger(self, trace: dict[str, Any]) -> Any:
         """Extract trigger info from a trace if not present on the root object."""
         trace_data = trace.get("trace", {})
@@ -142,6 +154,14 @@ class HAAutomationReader:
             if isinstance(value, str) and value:
                 return value
         return None
+
+    def _extract_run_id(self, trace: dict[str, Any]) -> str:
+        """Extract a run ID from a trace payload if available."""
+        for key in ("run_id", "id", "trace_id"):
+            value = trace.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return ""
 
     async def list_automations(self) -> list[dict[str, Any]]:
         """List all automations with basic info including area data and state."""
@@ -282,24 +302,31 @@ class HAAutomationReader:
         missing_triggers = 0
         missing_states = 0
         sample_keys: list[str] = []
+        sample_payload_keys: list[str] = []
 
         for trace in traces:
-            trigger = trace.get("trigger")
-            if not trigger:
-                trigger = self._extract_trigger(trace)
+            payload = self._unwrap_trace_payload(trace)
+            source = payload or trace
 
-            state = self._extract_state(trace)
-            script_execution = trace.get("script_execution") or trace.get("script")
+            trigger = source.get("trigger") if isinstance(source, dict) else None
+            if not trigger:
+                trigger = self._extract_trigger(source if isinstance(source, dict) else trace)
+
+            state = self._extract_state(source if isinstance(source, dict) else trace)
+            script_execution = (
+                (source.get("script_execution") if isinstance(source, dict) else None)
+                or (source.get("script") if isinstance(source, dict) else None)
+            )
 
             parsed_trace = {
-                "run_id": trace.get("run_id", ""),
+                "run_id": self._extract_run_id(source if isinstance(source, dict) else trace),
                 "state": state,
                 "script_execution": script_execution,
                 "trigger": trigger,
             }
 
             # Handle timestamp
-            timestamp_start, timestamp_finish = self._extract_timestamp(trace)
+            timestamp_start, timestamp_finish = self._extract_timestamp(source if isinstance(source, dict) else trace)
             parsed_trace["timestamp_start"] = timestamp_start
             parsed_trace["timestamp_finish"] = timestamp_finish
             if not timestamp_start:
@@ -323,18 +350,21 @@ class HAAutomationReader:
                 missing_states += 1
             if not sample_keys and isinstance(trace, dict):
                 sample_keys = sorted([str(k) for k in trace.keys()])
+            if not sample_payload_keys and isinstance(payload, dict):
+                sample_payload_keys = sorted([str(k) for k in payload.keys()])
 
             parsed_traces.append(parsed_trace)
 
         if traces:
             logger.debug(
-                "Trace parse summary for %s: %s traces, missing timestamps=%s, missing triggers=%s, missing state=%s, sample keys=%s",
+                "Trace parse summary for %s: %s traces, missing timestamps=%s, missing triggers=%s, missing state=%s, sample keys=%s, sample payload keys=%s",
                 automation_id,
                 len(traces),
                 missing_timestamps,
                 missing_triggers,
                 missing_states,
                 sample_keys,
+                sample_payload_keys,
             )
 
         return {
