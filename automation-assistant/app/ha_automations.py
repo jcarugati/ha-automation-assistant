@@ -43,19 +43,64 @@ class HAAutomationReader:
             logger.error(f"Failed to parse automations.yaml: {e}")
             return []
 
-    def _read_traces_file(self) -> dict[str, Any]:
+    def _read_traces_file(self) -> tuple[dict[str, Any], str]:
         """Read and parse trace.saved_traces."""
         if not self.traces_file.exists():
             logger.warning(f"Traces file not found: {self.traces_file}")
-            return {}
+            return {}, "missing_file"
         try:
             content = self.traces_file.read_text()
             if not content.strip():
-                return {}
-            return json.loads(content)
+                return {}, "empty_file"
+            return json.loads(content), "ok"
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse traces file: {e}")
-            return {}
+            return {}, "invalid_json"
+
+    def _extract_timestamp(self, trace: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+        """Extract start/finish timestamps from a trace, if present."""
+        start = None
+        finish = None
+
+        timestamp = trace.get("timestamp")
+        if isinstance(timestamp, dict):
+            start = timestamp.get("start") or timestamp.get("started") or timestamp.get("start_time")
+            finish = (
+                timestamp.get("finish")
+                or timestamp.get("end")
+                or timestamp.get("finished")
+                or timestamp.get("end_time")
+            )
+        elif isinstance(timestamp, str):
+            start = timestamp
+
+        start = start or trace.get("timestamp_start") or trace.get("start") or trace.get("start_time")
+        finish = finish or trace.get("timestamp_finish") or trace.get("finish") or trace.get("end") or trace.get("end_time")
+
+        return start, finish
+
+    def _extract_trigger(self, trace: dict[str, Any]) -> Any:
+        """Extract trigger info from a trace if not present on the root object."""
+        trace_data = trace.get("trace", {})
+        if not isinstance(trace_data, dict):
+            return None
+
+        # Look for trigger-like steps in the trace data
+        for key, steps in trace_data.items():
+            if "trigger" not in str(key).lower():
+                continue
+            if isinstance(steps, list):
+                for step in steps:
+                    if not isinstance(step, dict):
+                        continue
+                    if step.get("trigger"):
+                        return step.get("trigger")
+                    if step.get("description") or step.get("platform"):
+                        return {
+                            "description": step.get("description"),
+                            "platform": step.get("platform"),
+                        }
+        return None
 
     async def list_automations(self) -> list[dict[str, Any]]:
         """List all automations with basic info including area data and state."""
@@ -151,10 +196,16 @@ class HAAutomationReader:
             return yaml.dump(automation, default_flow_style=False, sort_keys=False)
         return None
 
-    async def get_traces(self, automation_id: Optional[str] = None) -> list[dict[str, Any]]:
+    async def get_traces(self, automation_id: Optional[str] = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Get execution traces, optionally filtered by automation ID."""
-        traces_data = self._read_traces_file()
+        traces_data, status = self._read_traces_file()
         data = traces_data.get("data", {})
+
+        meta = {
+            "status": status,
+            "source": "file",
+            "path": str(self.traces_file),
+        }
 
         if automation_id:
             # Try both with and without automation. prefix
@@ -163,7 +214,8 @@ class HAAutomationReader:
             # Also try just the ID
             if not traces:
                 traces = data.get(automation_id, [])
-            return traces
+            meta["count"] = len(traces)
+            return traces, meta
 
         # Return all traces
         all_traces = []
@@ -171,7 +223,8 @@ class HAAutomationReader:
             for trace in traces:
                 trace["entity_id"] = entity_id
                 all_traces.append(trace)
-        return all_traces
+        meta["count"] = len(all_traces)
+        return all_traces, meta
 
     async def get_automation_with_traces(self, automation_id: str) -> dict[str, Any]:
         """Get automation config along with its recent traces."""
@@ -179,31 +232,31 @@ class HAAutomationReader:
         if not automation:
             return {"automation": None, "traces": [], "yaml": None}
 
-        traces = await self.get_traces(automation_id)
+        traces, traces_meta = await self.get_traces(automation_id)
         yaml_content = await self.get_automation_yaml(automation_id)
 
         # Parse traces into a simpler format
         parsed_traces = []
         for trace in traces:
+            trigger = trace.get("trigger")
+            if not trigger:
+                trigger = self._extract_trigger(trace)
+
             parsed_trace = {
                 "run_id": trace.get("run_id", ""),
                 "state": trace.get("state", "unknown"),
                 "script_execution": trace.get("script_execution"),
-                "trigger": trace.get("trigger", "Unknown trigger"),
+                "trigger": trigger or "Unknown trigger",
             }
 
             # Handle timestamp
-            timestamp = trace.get("timestamp", {})
-            if isinstance(timestamp, dict):
-                parsed_trace["timestamp_start"] = timestamp.get("start")
-                parsed_trace["timestamp_finish"] = timestamp.get("finish")
-            else:
-                parsed_trace["timestamp_start"] = None
-                parsed_trace["timestamp_finish"] = None
+            timestamp_start, timestamp_finish = self._extract_timestamp(trace)
+            parsed_trace["timestamp_start"] = timestamp_start
+            parsed_trace["timestamp_finish"] = timestamp_finish
 
             # Check for errors in the trace
             trace_data = trace.get("trace", {})
-            error = None
+            error = trace.get("error")
             for step, steps in trace_data.items():
                 if isinstance(steps, list):
                     for step_data in steps:
@@ -220,6 +273,7 @@ class HAAutomationReader:
             "automation": automation,
             "traces": parsed_traces,
             "yaml": yaml_content,
+            "traces_meta": traces_meta,
         }
 
 

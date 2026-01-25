@@ -590,6 +590,12 @@
             gap: 8px;
         }
 
+        .execution-note {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
         .execution-item {
             display: flex;
             align-items: center;
@@ -622,6 +628,12 @@
         .execution-trigger {
             font-size: 12px;
             color: var(--text-muted);
+        }
+
+        .execution-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
         }
 
         /* AI Modify */
@@ -1032,6 +1044,7 @@
                     <!-- Recent Executions Section -->
                     <div class="section">
                         <h3 class="section-title">Recent Executions</h3>
+                        <div class="execution-note hidden" id="executionMeta"></div>
                         <div class="execution-list" id="executionList">
                             <div class="empty-state">
                                 <p>No recent executions</p>
@@ -1567,7 +1580,7 @@
                 document.getElementById('detailYaml').value = data.yaml || '';
 
                 // Render executions
-                renderExecutions(data.traces || []);
+                renderExecutions(data.traces || [], data.traces_meta || {});
 
                 // Check for issues
                 const singleAuto = insights.single_automation || [];
@@ -1604,8 +1617,15 @@
             }
         }
 
-        function renderExecutions(traces) {
+        function renderExecutions(traces, meta) {
             const container = document.getElementById('executionList');
+            const metaEl = document.getElementById('executionMeta');
+
+            if (metaEl) {
+                const metaText = formatTracesMeta(meta, traces);
+                metaEl.textContent = metaText;
+                metaEl.classList.toggle('hidden', !metaText);
+            }
 
             if (!traces || traces.length === 0) {
                 container.innerHTML = '<div class="empty-state"><p>No recent executions</p></div>';
@@ -1618,9 +1638,39 @@
                 return timeB - timeA;
             });
 
+            if (metaEl) {
+                const metaText = formatTracesMeta(meta, traces, sorted.length);
+                metaEl.textContent = metaText;
+                metaEl.classList.toggle('hidden', !metaText);
+            }
+
             container.innerHTML = sorted.map(t => {
-                const time = t.timestamp_start ? new Date(t.timestamp_start).toLocaleString() : 'Unknown time';
+                const startDate = t.timestamp_start ? new Date(t.timestamp_start) : null;
+                const finishDate = t.timestamp_finish ? new Date(t.timestamp_finish) : null;
+                const time = (startDate && !isNaN(startDate)) ? startDate.toLocaleString() : 'Unknown time';
                 const isError = t.error || t.state === 'error';
+                const durationMs = (
+                    startDate && finishDate && !isNaN(startDate) && !isNaN(finishDate)
+                ) ? finishDate - startDate : null;
+                const duration = durationMs !== null && durationMs >= 0 ? formatDuration(durationMs) : null;
+                const execution = t.script_execution || t.state;
+                const details = [];
+                if (t.run_id) {
+                    details.push(`Run ${t.run_id.slice(0, 8)}`);
+                }
+                if (execution) {
+                    details.push(`Execution ${execution}`);
+                }
+                if (duration) {
+                    details.push(`Duration ${duration}`);
+                }
+                const errorText = formatError(t.error);
+                if (errorText) {
+                    details.push(`Error ${errorText}`);
+                }
+                const detailsHtml = details.length
+                    ? `<div class="execution-meta">${escapeHtml(details.join(' • '))}</div>`
+                    : '';
                 return `
                     <div class="execution-item">
                         <div class="execution-icon ${isError ? 'error' : 'success'}">
@@ -1629,6 +1679,7 @@
                         <div class="execution-info">
                             <div class="execution-time">${time} - ${isError ? 'Error' : 'Success'}</div>
                             <div class="execution-trigger">${escapeHtml(formatTrigger(t.trigger))}</div>
+                            ${detailsHtml}
                         </div>
                     </div>
                 `;
@@ -1638,7 +1689,73 @@
         function formatTrigger(trigger) {
             if (!trigger) return 'Unknown trigger';
             if (typeof trigger === 'string') return trigger;
-            return trigger.description || trigger.platform || 'Trigger';
+            const parts = [];
+            if (trigger.description) {
+                parts.push(trigger.description);
+            } else if (trigger.platform) {
+                parts.push(trigger.platform);
+            }
+            if (trigger.entity_id) {
+                parts.push(trigger.entity_id);
+            }
+            return parts.length ? parts.join(' • ') : 'Trigger';
+        }
+
+        function formatDuration(durationMs) {
+            if (durationMs < 1000) {
+                return `${Math.round(durationMs)}ms`;
+            }
+            if (durationMs < 60000) {
+                return `${(durationMs / 1000).toFixed(1)}s`;
+            }
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = Math.round((durationMs % 60000) / 1000);
+            return `${minutes}m ${seconds}s`;
+        }
+
+        function formatError(error) {
+            if (!error) return '';
+            if (typeof error === 'string') return truncateText(error, 140);
+            if (typeof error === 'object') {
+                const message = error.message || error.error || '';
+                if (message) return truncateText(message, 140);
+                try {
+                    return truncateText(JSON.stringify(error), 140);
+                } catch (e) {
+                    return '';
+                }
+            }
+            return '';
+        }
+
+        function truncateText(text, maxLength) {
+            if (!text) return '';
+            if (text.length <= maxLength) return text;
+            return `${text.slice(0, maxLength - 3)}...`;
+        }
+
+        function formatTracesMeta(meta, traces, displayedCount) {
+            if (!meta || typeof meta !== 'object') return '';
+            if (meta.status === 'missing_file') {
+                return `Trace history file not found at ${meta.path}. For local runs, set HA_CONFIG_PATH or mount /config.`;
+            }
+            if (meta.status === 'empty_file') {
+                return 'Trace history file is empty.';
+            }
+            if (meta.status === 'invalid_json') {
+                return 'Trace history file could not be parsed.';
+            }
+            const count = typeof meta.count === 'number' ? meta.count : (traces ? traces.length : 0);
+            if (displayedCount) {
+                if (count > displayedCount) {
+                    return `Showing ${displayedCount} of ${count} recent executions.`;
+                }
+                return `${count} recent execution${count === 1 ? '' : 's'}.`;
+            }
+            if (count) {
+                return `${count} recent execution${count === 1 ? '' : 's'}.`;
+            }
+            return '';
         }
 
         // Event Listeners
