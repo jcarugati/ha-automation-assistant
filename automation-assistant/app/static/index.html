@@ -255,6 +255,7 @@
             height: 8px;
             border-radius: 50%;
             flex-shrink: 0;
+            cursor: help;
         }
 
         .automation-status.healthy { background: var(--success); }
@@ -617,6 +618,7 @@
 
         .execution-icon.success { background: var(--success-light); color: var(--success); }
         .execution-icon.error { background: var(--error-light); color: var(--error); }
+        .execution-icon.warning { background: var(--warning-light); color: var(--warning); }
 
         .execution-info { flex: 1; }
 
@@ -1201,6 +1203,7 @@
         let currentFilter = 'all';
         let currentGroupBy = 'area';
         let searchQuery = '';
+        let currentAutomationDetails = null;
 
         // DOM Elements
         const elements = {
@@ -1263,6 +1266,8 @@
                 }
                 insights = await res.json();
                 updateInsightsBadge();
+                renderAutomationList();
+                updateStats();
                 renderInsights();
             } catch (e) {
                 console.error('Failed to load insights:', e);
@@ -1337,9 +1342,10 @@
                     const status = getAutomationStatus(auto);
                     const selected = currentAutomation?.id === auto.id ? 'selected' : '';
                     const stateText = auto.state === 'on' ? 'Enabled' : (auto.state === 'off' ? 'Disabled' : 'Unknown');
+                    const tooltip = getAutomationTooltip(auto, status, stateText);
                     html += `
-                        <button class="automation-item ${selected}" onclick="selectAutomation('${auto.id}')">
-                            <div class="automation-status ${status}" title="${statusTooltips[status]}"></div>
+                        <button class="automation-item ${selected}" onclick="selectAutomation('${auto.id}')" title="${tooltip}">
+                            <div class="automation-status ${status}" title="${tooltip}" aria-label="${tooltip}"></div>
                             <div class="automation-info">
                                 <div class="automation-name">${escapeHtml(auto.alias)}</div>
                                 <div class="automation-meta">${stateText}</div>
@@ -1415,9 +1421,9 @@
 
         const statusTooltips = {
             healthy: 'Healthy - No issues detected',
-            warning: 'Warning - Has issues or unknown state',
+            warning: 'Warning - Issues detected or state unknown',
             error: 'Error - Critical issues detected',
-            disabled: 'Disabled'
+            disabled: 'Disabled - Automation is turned off'
         };
 
         function getAutomationStatus(auto) {
@@ -1439,6 +1445,12 @@
             }
 
             return 'healthy';
+        }
+
+        function getAutomationTooltip(auto, status, stateText) {
+            const healthText = statusTooltips[status] || 'Status';
+            const stateDetail = stateText || 'Unknown';
+            return `Health: ${healthText}. State: ${stateDetail}.`;
         }
 
         function updateStats() {
@@ -1575,6 +1587,8 @@
                     throw new Error(`HTTP ${res.status}`);
                 }
                 const data = await res.json();
+                currentAutomationDetails = data;
+                executionDisplayLimit = 2;
 
                 // Set YAML
                 document.getElementById('detailYaml').value = data.yaml || '';
@@ -1620,6 +1634,7 @@
         function renderExecutions(traces, meta) {
             const container = document.getElementById('executionList');
             const metaEl = document.getElementById('executionMeta');
+            const limit = executionDisplayLimit;
 
             if (metaEl) {
                 const metaText = formatTracesMeta(meta, traces);
@@ -1632,23 +1647,28 @@
                 return;
             }
 
-            const sorted = traces.slice(0, 10).sort((a, b) => {
+            const sorted = traces.slice(0, 50).sort((a, b) => {
                 const timeA = a.timestamp_start ? new Date(a.timestamp_start) : 0;
                 const timeB = b.timestamp_start ? new Date(b.timestamp_start) : 0;
                 return timeB - timeA;
             });
 
+            const visible = sorted.slice(0, limit);
+
             if (metaEl) {
-                const metaText = formatTracesMeta(meta, traces, sorted.length);
+                const metaText = formatTracesMeta(meta, traces, visible.length);
                 metaEl.textContent = metaText;
                 metaEl.classList.toggle('hidden', !metaText);
             }
 
-            container.innerHTML = sorted.map(t => {
+            const html = visible.map(t => {
                 const startDate = t.timestamp_start ? new Date(t.timestamp_start) : null;
                 const finishDate = t.timestamp_finish ? new Date(t.timestamp_finish) : null;
-                const time = (startDate && !isNaN(startDate)) ? startDate.toLocaleString() : 'Unknown time';
+                const time = (startDate && !isNaN(startDate)) ? startDate.toLocaleString() : 'Time not recorded';
+                const hasState = Boolean(t.state || t.script_execution);
                 const isError = t.error || t.state === 'error';
+                const statusLabel = isError ? 'Error' : (hasState ? 'Success' : 'Status not recorded');
+                const iconClass = isError ? 'error' : (hasState ? 'success' : 'warning');
                 const durationMs = (
                     startDate && finishDate && !isNaN(startDate) && !isNaN(finishDate)
                 ) ? finishDate - startDate : null;
@@ -1668,26 +1688,45 @@
                 if (errorText) {
                     details.push(`Error ${errorText}`);
                 }
+                if (!errorText && !execution) {
+                    details.push('No execution details recorded');
+                }
                 const detailsHtml = details.length
                     ? `<div class="execution-meta">${escapeHtml(details.join(' • '))}</div>`
                     : '';
                 return `
                     <div class="execution-item">
-                        <div class="execution-icon ${isError ? 'error' : 'success'}">
-                            ${isError ? '✗' : '✓'}
+                        <div class="execution-icon ${iconClass}">
+                            ${isError ? '✗' : (hasState ? '✓' : '!')}
                         </div>
                         <div class="execution-info">
-                            <div class="execution-time">${time} - ${isError ? 'Error' : 'Success'}</div>
+                            <div class="execution-time">${time} - ${statusLabel}</div>
                             <div class="execution-trigger">${escapeHtml(formatTrigger(t.trigger))}</div>
                             ${detailsHtml}
                         </div>
                     </div>
                 `;
             }).join('');
+
+            let footer = '';
+            if (sorted.length > limit) {
+                footer = `
+                    <div style="display: flex; justify-content: center; margin-top: 10px;">
+                        <button class="btn btn-sm btn-secondary" onclick="showMoreExecutions()">
+                            Show more (${sorted.length - limit} more)
+                        </button>
+                    </div>
+                `;
+            } else if (sorted.length > 2 && limit > 2) {
+                footer = `
+                    <div style=\"display: flex; justify-content: center; margin-top: 10px;\">\n                        <button class=\"btn btn-sm btn-secondary\" onclick=\"showFewerExecutions()\">\n                            Show fewer\n                        </button>\n                    </div>\n                `;
+            }
+
+            container.innerHTML = html + footer;
         }
 
         function formatTrigger(trigger) {
-            if (!trigger) return 'Unknown trigger';
+            if (!trigger) return 'Trigger details unavailable';
             if (typeof trigger === 'string') return trigger;
             const parts = [];
             if (trigger.description) {
@@ -1698,7 +1737,7 @@
             if (trigger.entity_id) {
                 parts.push(trigger.entity_id);
             }
-            return parts.length ? parts.join(' • ') : 'Trigger';
+            return parts.length ? parts.join(' • ') : 'Trigger details unavailable';
         }
 
         function formatDuration(durationMs) {
@@ -1732,6 +1771,22 @@
             if (!text) return '';
             if (text.length <= maxLength) return text;
             return `${text.slice(0, maxLength - 3)}...`;
+        }
+
+        let executionDisplayLimit = 2;
+
+        function showMoreExecutions() {
+            executionDisplayLimit = Math.min(executionDisplayLimit + 5, 50);
+            if (currentAutomationDetails) {
+                renderExecutions(currentAutomationDetails.traces || [], currentAutomationDetails.traces_meta || {});
+            }
+        }
+
+        function showFewerExecutions() {
+            executionDisplayLimit = 2;
+            if (currentAutomationDetails) {
+                renderExecutions(currentAutomationDetails.traces || [], currentAutomationDetails.traces_meta || {});
+            }
         }
 
         function formatTracesMeta(meta, traces, displayedCount) {

@@ -77,6 +77,24 @@ class HAAutomationReader:
         start = start or trace.get("timestamp_start") or trace.get("start") or trace.get("start_time")
         finish = finish or trace.get("timestamp_finish") or trace.get("finish") or trace.get("end") or trace.get("end_time")
 
+        if not start:
+            trace_data = trace.get("trace", {})
+            if isinstance(trace_data, dict):
+                for key, value in trace_data.items():
+                    if "timestamp" not in str(key).lower():
+                        continue
+                    if isinstance(value, dict):
+                        start = value.get("start") or value.get("started") or value.get("start_time")
+                        finish = (
+                            finish
+                            or value.get("finish")
+                            or value.get("end")
+                            or value.get("finished")
+                            or value.get("end_time")
+                        )
+                        if start:
+                            break
+
         return start, finish
 
     def _extract_trigger(self, trace: dict[str, Any]) -> Any:
@@ -84,6 +102,11 @@ class HAAutomationReader:
         trace_data = trace.get("trace", {})
         if not isinstance(trace_data, dict):
             return None
+
+        # Direct trigger fields sometimes appear on the trace payload
+        for direct_key in ("trigger", "trigger_data", "trigger_description"):
+            if direct_key in trace_data:
+                return trace_data.get(direct_key)
 
         # Look for trigger-like steps in the trace data
         for key, steps in trace_data.items():
@@ -95,11 +118,29 @@ class HAAutomationReader:
                         continue
                     if step.get("trigger"):
                         return step.get("trigger")
-                    if step.get("description") or step.get("platform"):
+                    if step.get("description") or step.get("platform") or step.get("entity_id"):
                         return {
                             "description": step.get("description"),
                             "platform": step.get("platform"),
+                            "entity_id": step.get("entity_id"),
                         }
+            elif isinstance(steps, dict):
+                if steps.get("trigger"):
+                    return steps.get("trigger")
+                if steps.get("description") or steps.get("platform") or steps.get("entity_id"):
+                    return {
+                        "description": steps.get("description"),
+                        "platform": steps.get("platform"),
+                        "entity_id": steps.get("entity_id"),
+                    }
+        return None
+
+    def _extract_state(self, trace: dict[str, Any]) -> Optional[str]:
+        """Extract execution state from a trace if present."""
+        for key in ("state", "status", "result"):
+            value = trace.get(key)
+            if isinstance(value, str) and value:
+                return value
         return None
 
     async def list_automations(self) -> list[dict[str, Any]]:
@@ -237,22 +278,32 @@ class HAAutomationReader:
 
         # Parse traces into a simpler format
         parsed_traces = []
+        missing_timestamps = 0
+        missing_triggers = 0
+        missing_states = 0
+        sample_keys: list[str] = []
+
         for trace in traces:
             trigger = trace.get("trigger")
             if not trigger:
                 trigger = self._extract_trigger(trace)
 
+            state = self._extract_state(trace)
+            script_execution = trace.get("script_execution") or trace.get("script")
+
             parsed_trace = {
                 "run_id": trace.get("run_id", ""),
-                "state": trace.get("state", "unknown"),
-                "script_execution": trace.get("script_execution"),
-                "trigger": trigger or "Unknown trigger",
+                "state": state,
+                "script_execution": script_execution,
+                "trigger": trigger,
             }
 
             # Handle timestamp
             timestamp_start, timestamp_finish = self._extract_timestamp(trace)
             parsed_trace["timestamp_start"] = timestamp_start
             parsed_trace["timestamp_finish"] = timestamp_finish
+            if not timestamp_start:
+                missing_timestamps += 1
 
             # Check for errors in the trace
             trace_data = trace.get("trace", {})
@@ -266,8 +317,25 @@ class HAAutomationReader:
                 if error:
                     break
             parsed_trace["error"] = error
+            if not parsed_trace["trigger"]:
+                missing_triggers += 1
+            if not state and not script_execution:
+                missing_states += 1
+            if not sample_keys and isinstance(trace, dict):
+                sample_keys = sorted([str(k) for k in trace.keys()])
 
             parsed_traces.append(parsed_trace)
+
+        if traces:
+            logger.debug(
+                "Trace parse summary for %s: %s traces, missing timestamps=%s, missing triggers=%s, missing state=%s, sample keys=%s",
+                automation_id,
+                len(traces),
+                missing_timestamps,
+                missing_triggers,
+                missing_states,
+                sample_keys,
+            )
 
         return {
             "automation": automation,
