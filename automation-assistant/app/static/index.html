@@ -1047,6 +1047,10 @@
                     <div class="section">
                         <h3 class="section-title">Recent Executions</h3>
                         <div class="execution-note hidden" id="executionMeta"></div>
+                        <div id="executionLoading" class="loading hidden">
+                            <div class="spinner"></div>
+                            <span>Loading executions...</span>
+                        </div>
                         <div class="execution-list" id="executionList">
                             <div class="empty-state">
                                 <p>No recent executions</p>
@@ -1582,6 +1586,7 @@
 
         async function loadAutomationDetails(id) {
             try {
+                setExecutionsLoading(true);
                 const res = await fetch(`api/ha-automations/${id}`);
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
@@ -1628,6 +1633,11 @@
 
             } catch (e) {
                 console.error('Failed to load automation details:', e);
+                setExecutionsLoading(false);
+                const container = document.getElementById('executionList');
+                if (container) {
+                    container.innerHTML = '<div class="empty-state"><p>Failed to load executions</p></div>';
+                }
             }
         }
 
@@ -1635,6 +1645,8 @@
             const container = document.getElementById('executionList');
             const metaEl = document.getElementById('executionMeta');
             const limit = executionDisplayLimit;
+
+            setExecutionsLoading(false);
 
             if (metaEl) {
                 const metaText = formatTracesMeta(meta, traces);
@@ -1811,6 +1823,15 @@
                 return `${count} recent execution${count === 1 ? '' : 's'}.`;
             }
             return '';
+        }
+
+        function setExecutionsLoading(isLoading) {
+            const loadingEl = document.getElementById('executionLoading');
+            const listEl = document.getElementById('executionList');
+            const metaEl = document.getElementById('executionMeta');
+            if (loadingEl) loadingEl.classList.toggle('hidden', !isLoading);
+            if (listEl) listEl.classList.toggle('hidden', isLoading);
+            if (metaEl && isLoading) metaEl.classList.add('hidden');
         }
 
         // Event Listeners
