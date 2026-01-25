@@ -847,7 +847,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-logo">Automation Assistant</div>
-                <div class="sidebar-subtitle">Home Assistant Automations</div>
+                <div class="sidebar-subtitle">Home Assistant Automations <span id="appVersion" style="opacity: 0.6;"></span></div>
             </div>
 
             <div class="sidebar-search">
@@ -1200,6 +1200,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
+            loadVersion();  // Load version immediately, don't await
             await loadAutomations();
             await loadInsights();
             await loadSchedule();
@@ -1207,6 +1208,18 @@
         });
 
         // API Functions
+        async function loadVersion() {
+            try {
+                const res = await fetch('api/version');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('appVersion').textContent = `v${data.version}`;
+                }
+            } catch (e) {
+                console.warn('Failed to load version:', e);
+            }
+        }
+
         async function loadAutomations() {
             try {
                 const res = await fetch('api/ha-automations');
@@ -1310,12 +1323,13 @@
                 for (const auto of items) {
                     const status = getAutomationStatus(auto);
                     const selected = currentAutomation?.id === auto.id ? 'selected' : '';
+                    const stateText = auto.state === 'on' ? 'Enabled' : (auto.state === 'off' ? 'Disabled' : 'Unknown');
                     html += `
                         <button class="automation-item ${selected}" onclick="selectAutomation('${auto.id}')">
-                            <div class="automation-status ${status}"></div>
+                            <div class="automation-status ${status}" title="${statusTooltips[status]}"></div>
                             <div class="automation-info">
                                 <div class="automation-name">${escapeHtml(auto.alias)}</div>
-                                <div class="automation-meta">${auto.state === 'on' ? 'Enabled' : 'Disabled'}</div>
+                                <div class="automation-meta">${stateText}</div>
                             </div>
                         </button>
                     `;
@@ -1368,7 +1382,7 @@
                 if (currentGroupBy === 'area') {
                     key = auto.area_name || 'No Area';
                 } else if (currentGroupBy === 'state') {
-                    key = auto.state === 'on' ? 'Enabled' : 'Disabled';
+                    key = auto.state === 'on' ? 'Enabled' : (auto.state === 'off' ? 'Disabled' : 'Unknown');
                 } else {
                     key = auto.alias[0]?.toUpperCase() || '#';
                 }
@@ -1386,8 +1400,16 @@
             return sorted;
         }
 
+        const statusTooltips = {
+            healthy: 'Healthy - No issues detected',
+            warning: 'Warning - Has issues or unknown state',
+            error: 'Error - Critical issues detected',
+            disabled: 'Disabled'
+        };
+
         function getAutomationStatus(auto) {
             if (auto.state === 'off') return 'disabled';
+            if (auto.state !== 'on') return 'warning';  // unknown state
 
             const singleAuto = insights.single_automation || [];
             const multiAuto = insights.multi_automation || [];
@@ -1521,9 +1543,12 @@
             if (auto.state === 'on') {
                 statusBadge.className = 'status-badge enabled';
                 statusText.textContent = 'Enabled';
-            } else {
+            } else if (auto.state === 'off') {
                 statusBadge.className = 'status-badge disabled';
                 statusText.textContent = 'Disabled';
+            } else {
+                statusBadge.className = 'status-badge warning';
+                statusText.textContent = 'Unknown';
             }
 
             // Load automation details

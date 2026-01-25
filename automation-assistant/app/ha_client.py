@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 import websockets
@@ -19,7 +19,7 @@ class HAClient:
         self.supervisor_url = config.supervisor_base_url
         self.ha_url = config.ha_base_url
         self.token = config.supervisor_token
-        self._session: aiohttp.ClientSession | None = None
+        self._session: Optional[aiohttp.ClientSession] = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -78,7 +78,7 @@ class HAClient:
 
     async def _websocket_command(self, command_type: str) -> list[dict[str, Any]]:
         """Execute a WebSocket command and return the result."""
-        ws_url = f"ws://supervisor/core/websocket"
+        ws_url = config.ha_ws_url
 
         try:
             async with websockets.connect(
@@ -178,7 +178,7 @@ class HAClient:
             logger.error(f"Failed to reload automations: {e}")
             return False
 
-    async def get_automation_config(self, automation_id: str) -> dict[str, Any] | None:
+    async def get_automation_config(self, automation_id: str) -> Optional[dict[str, Any]]:
         """Get the configuration of a specific automation.
 
         Args:
@@ -202,6 +202,38 @@ class HAClient:
         except aiohttp.ClientError as e:
             logger.error(f"Failed to get automation config: {e}")
             return None
+
+    async def list_automations(self) -> list[dict[str, Any]]:
+        """List all automations via the HA REST API.
+
+        Gets automation info from entity states and their attributes.
+        Used for local development when we can't read automations.yaml directly.
+
+        Returns:
+            List of automation config dicts with basic info (id, alias, mode, entity_id)
+        """
+        states = await self.get_states()
+        automation_states = [s for s in states if s.get("entity_id", "").startswith("automation.")]
+
+        automations = []
+        for state in automation_states:
+            entity_id = state.get("entity_id", "")
+            attrs = state.get("attributes", {})
+            # The real automation ID is in attributes.id
+            auto_id = attrs.get("id", "")
+            if not auto_id:
+                # Fall back to entity_id suffix if no id attribute
+                auto_id = entity_id.replace("automation.", "")
+
+            automations.append({
+                "id": auto_id,
+                "alias": attrs.get("friendly_name", "Unnamed Automation"),
+                "mode": attrs.get("mode", "single"),
+                "_entity_id": entity_id,  # Store for enrichment lookups
+            })
+
+        logger.info(f"Fetched {len(automations)} automations via API")
+        return automations
 
     async def get_full_context(self) -> dict[str, Any]:
         """Fetch all context data from Home Assistant.

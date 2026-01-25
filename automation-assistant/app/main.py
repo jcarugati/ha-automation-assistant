@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
@@ -11,7 +12,7 @@ from pydantic import BaseModel
 
 from .automation import automation_generator, validate_automation_yaml
 from .batch_doctor import batch_diagnosis_service
-from .config import config
+from .config import VERSION, config
 from .diagnostic_storage import diagnostic_storage
 from .doctor import automation_doctor
 from .ha_client import ha_client
@@ -89,7 +90,11 @@ async def root():
     """Serve the web UI."""
     index_path = static_path / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        response = FileResponse(index_path)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     return HTMLResponse("<h1>Automation Assistant</h1><p>UI not found</p>")
 
 
@@ -100,6 +105,12 @@ async def health():
         status="healthy",
         configured=config.is_configured,
     )
+
+
+@app.get("/api/version")
+async def get_version():
+    """Get the add-on version."""
+    return {"version": VERSION}
 
 
 @app.post("/api/generate", response_model=AutomationResponse)
@@ -421,8 +432,8 @@ async def get_schedule():
 
 class ScheduleUpdateRequest(BaseModel):
     """Request model for updating schedule."""
-    time: str | None = None
-    enabled: bool | None = None
+    time: Optional[str] = None
+    enabled: Optional[bool] = None
 
 
 @app.put("/api/doctor/schedule", response_model=ScheduleConfig)

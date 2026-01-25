@@ -2,14 +2,18 @@
 
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
 from .ha_client import ha_client
 
 logger = logging.getLogger(__name__)
+
+# Allow overriding config path for local development
+HA_CONFIG_PATH = os.environ.get("HA_CONFIG_PATH", "/config")
 
 
 class HAAutomationReader:
@@ -57,11 +61,17 @@ class HAAutomationReader:
         """List all automations with basic info including area data and state."""
         automations = self._read_automations_file()
 
+        # Fall back to API if file doesn't exist (local development)
+        if not automations and not self.automations_file.exists():
+            logger.info("Automations file not found, fetching via API...")
+            automations = await ha_client.list_automations()
+
         # Fetch entity registry and areas for enrichment
         try:
             entity_registry = await ha_client.get_entity_registry()
             areas = await ha_client.get_areas()
             states = await ha_client.get_states()
+            logger.info(f"Enrichment data: {len(entity_registry)} entities, {len(areas)} areas, {len(states)} states")
         except Exception as e:
             logger.warning(f"Failed to fetch enrichment data: {e}")
             entity_registry = []
@@ -84,7 +94,8 @@ class HAAutomationReader:
         result = []
         for auto in automations:
             auto_id = auto.get("id", "")
-            entity_id = f"automation.{auto_id}"
+            # Use _entity_id from API response if available, otherwise construct from id
+            entity_id = auto.get("_entity_id") or f"automation.{auto_id}"
 
             # Get area info from entity registry
             entity_info = entity_map.get(entity_id, {})
@@ -105,22 +116,26 @@ class HAAutomationReader:
             })
         return result
 
-    async def get_automation(self, automation_id: str) -> dict[str, Any] | None:
+    async def get_automation(self, automation_id: str) -> Optional[dict[str, Any]]:
         """Get a specific automation by ID."""
         automations = self._read_automations_file()
         for auto in automations:
             if auto.get("id") == automation_id:
                 return auto
+
+        # Fall back to API if not found in file (local development)
+        if not self.automations_file.exists():
+            return await ha_client.get_automation_config(automation_id)
         return None
 
-    async def get_automation_yaml(self, automation_id: str) -> str | None:
+    async def get_automation_yaml(self, automation_id: str) -> Optional[str]:
         """Get automation as YAML string."""
         automation = await self.get_automation(automation_id)
         if automation:
             return yaml.dump(automation, default_flow_style=False, sort_keys=False)
         return None
 
-    async def get_traces(self, automation_id: str | None = None) -> list[dict[str, Any]]:
+    async def get_traces(self, automation_id: Optional[str] = None) -> list[dict[str, Any]]:
         """Get execution traces, optionally filtered by automation ID."""
         traces_data = self._read_traces_file()
         data = traces_data.get("data", {})
@@ -192,5 +207,5 @@ class HAAutomationReader:
         }
 
 
-# Global instance
-ha_automation_reader = HAAutomationReader()
+# Global instance - uses HA_CONFIG_PATH env var for local development
+ha_automation_reader = HAAutomationReader(config_path=HA_CONFIG_PATH)
