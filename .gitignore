@@ -1,3 +1,9 @@
 # Claude Code configuration
 AGENT.md
 CLAUDE.md
+AGENTS.md
+
+# Local development
+run-local.sh
+.env
+automation-assistant/.env

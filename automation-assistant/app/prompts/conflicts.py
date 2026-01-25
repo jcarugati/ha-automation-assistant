@@ -1,7 +1,7 @@
 """Prompt templates for automation conflict detection and batch analysis."""
 
 import json
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -264,7 +264,7 @@ def _compact_action(a: dict[str, Any]) -> str:
 
 def build_batch_analysis_prompt(
     automations: list[dict[str, Any]],
-    available_entities: list[str] | None = None,
+    available_entities: Optional[list[str]] = None,
 ) -> str:
     """Build prompt for Claude to analyze ALL automations in a single request.
 

@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -14,7 +14,7 @@ from .prompts import build_modify_user_prompt, build_system_prompt, build_user_p
 logger = logging.getLogger(__name__)
 
 
-def extract_yaml_from_response(response: str) -> str | None:
+def extract_yaml_from_response(response: str) -> Optional[str]:
     """Extract YAML content from an LLM response.
 
     Looks for YAML in code blocks (```yaml ... ``` or ``` ... ```).

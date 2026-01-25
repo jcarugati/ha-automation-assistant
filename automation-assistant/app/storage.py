@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class StorageManager:
             data = self._load_data()
             return data.get("automations", [])
 
-    async def get(self, automation_id: str) -> dict[str, Any] | None:
+    async def get(self, automation_id: str) -> Optional[dict[str, Any]]:
         """Get a specific automation by ID."""
         async with self._lock:
             data = self._load_data()
@@ -90,7 +90,9 @@ class StorageManager:
                 return True
             return False
 
-    async def update(self, automation_id: str, prompt: str, yaml_content: str) -> dict[str, Any] | None:
+    async def update(
+        self, automation_id: str, prompt: str, yaml_content: str
+    ) -> Optional[dict[str, Any]]:
         """Update an existing automation."""
         async with self._lock:
             data = self._load_data()

@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -118,7 +118,9 @@ class DiagnosisScheduler:
             "next_run": next_run,
         }
 
-    def update_schedule(self, time: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
+    def update_schedule(
+        self, time: Optional[str] = None, enabled: Optional[bool] = None
+    ) -> dict[str, Any]:
         """Update schedule configuration.
 
         Args:

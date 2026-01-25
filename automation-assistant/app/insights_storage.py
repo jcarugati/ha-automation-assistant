@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class InsightsStorage:
             logger.info(f"Processed {len(insights)} insights, {new_count} new")
             return new_count
 
-    async def get_all(self, category: str | None = None) -> list[dict[str, Any]]:
+    async def get_all(self, category: Optional[str] = None) -> list[dict[str, Any]]:
         """Get all insights, optionally filtered by category (single/multi)."""
         async with self._lock:
             data = self._load_data()

@@ -25,6 +25,25 @@ A Home Assistant add-on that generates automations from natural language using C
 | `model` | Claude model to use | `claude-sonnet-4-20250514` |
 | `log_level` | Logging level | `info` |
 
+## Local Development
+
+Fastest way to run locally:
+
+```bash
+cp automation-assistant/.env.example automation-assistant/.env
+make dev
+```
+
+`make dev` will automatically use `.venv/bin/python` if a virtualenv exists at the repo root.
+
+You can also run it as a single command without a `.env` file:
+
+```bash
+CLAUDE_API_KEY="your-api-key" SUPERVISOR_TOKEN="your-token" make dev
+```
+
+Then open `http://localhost:8099`.
+
 ## Usage
 
 1. Open Automation Assistant from the Home Assistant sidebar

@@ -5,7 +5,7 @@ import logging
 import re
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from .diagnostic_storage import diagnostic_storage
 from .ha_automations import ha_automation_reader
@@ -193,7 +193,7 @@ class BatchDiagnosisService:
             self._is_running = False
             self._cancel_requested = False
 
-    async def _get_entity_list(self) -> list[str] | None:
+    async def _get_entity_list(self) -> Optional[list[str]]:
         """Get list of available entity IDs for validation."""
         try:
             states = await ha_client.get_states()
@@ -205,7 +205,7 @@ class BatchDiagnosisService:
     async def _analyze_batch(
         self,
         automations: list[dict[str, Any]],
-        available_entities: list[str] | None,
+        available_entities: Optional[list[str]],
     ) -> tuple[list[AutomationDiagnosisSummary], list[AutomationConflict], str]:
         """Analyze a batch of automations with a single Claude call.
 

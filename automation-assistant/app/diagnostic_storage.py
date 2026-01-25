@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +66,14 @@ class DiagnosticStorage:
             self._save_data(data)
             logger.info(f"Saved diagnosis report: {report.get('run_id', 'unknown')}")
 
-    async def get_latest_report(self) -> dict[str, Any] | None:
+    async def get_latest_report(self) -> Optional[dict[str, Any]]:
         """Get most recent report."""
         async with self._lock:
             data = self._load_data()
             reports = data.get("reports", [])
             return reports[0] if reports else None
 
-    async def get_report(self, run_id: str) -> dict[str, Any] | None:
+    async def get_report(self, run_id: str) -> Optional[dict[str, Any]]:
         """Get specific report by ID."""
         async with self._lock:
             data = self._load_data()

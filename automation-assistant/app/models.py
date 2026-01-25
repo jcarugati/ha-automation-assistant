@@ -1,7 +1,7 @@
 """Pydantic models for the API."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,8 +24,10 @@ class AutomationResponse(BaseModel):
 
     success: bool = Field(..., description="Whether generation was successful")
     response: str = Field(..., description="Full LLM response with YAML and explanation")
-    yaml_content: str | None = Field(None, description="Extracted YAML content if available")
-    error: str | None = Field(None, description="Error message if generation failed")
+    yaml_content: Optional[str] = Field(
+        None, description="Extracted YAML content if available"
+    )
+    error: Optional[str] = Field(None, description="Error message if generation failed")
 
 
 class ValidationRequest(BaseModel):
@@ -108,11 +110,11 @@ class HAAutomationSummary(BaseModel):
 
     id: str = Field(..., description="Automation ID")
     alias: str = Field(..., description="Automation alias/name")
-    description: str | None = Field(None, description="Automation description")
-    mode: str | None = Field(None, description="Automation mode")
-    area_id: str | None = Field(None, description="Area ID from entity registry")
-    area_name: str | None = Field(None, description="Area name")
-    state: str | None = Field(None, description="Automation state (on/off)")
+    description: Optional[str] = Field(None, description="Automation description")
+    mode: Optional[str] = Field(None, description="Automation mode")
+    area_id: Optional[str] = Field(None, description="Area ID from entity registry")
+    area_name: Optional[str] = Field(None, description="Area name")
+    state: Optional[str] = Field(None, description="Automation state (on/off)")
 
 
 class HAAutomationList(BaseModel):
@@ -137,7 +139,7 @@ class DiagnosisResponse(BaseModel):
     traces_summary: list[dict[str, Any]] = Field(default_factory=list, description="Recent execution traces")
     analysis: str = Field(..., description="Claude's analysis and recommendations")
     success: bool = Field(..., description="Whether diagnosis was successful")
-    error: str | None = Field(None, description="Error message if diagnosis failed")
+    error: Optional[str] = Field(None, description="Error message if diagnosis failed")
 
 
 # Batch diagnosis models
@@ -226,7 +228,7 @@ class ScheduleConfig(BaseModel):
 
     enabled: bool = Field(True, description="Whether scheduling is enabled")
     time: str = Field("03:00", description="Time to run daily (HH:MM format)")
-    next_run: datetime | None = Field(None, description="Next scheduled run time")
+    next_run: Optional[datetime] = Field(None, description="Next scheduled run time")
 
 
 # Deploy feature models
@@ -236,7 +238,12 @@ class DeployAutomationRequest(BaseModel):
     """Request model for deploying an automation to Home Assistant."""
 
     yaml_content: str = Field(..., min_length=1, description="YAML content of the automation")
-    automation_id: str | None = Field(None, description="Optional automation ID. If not provided, will be extracted from YAML or generated.")
+    automation_id: Optional[str] = Field(
+        None,
+        description=(
+            "Optional automation ID. If not provided, will be extracted from YAML or generated."
+        ),
+    )
 
 
 class DeployAutomationResponse(BaseModel):
