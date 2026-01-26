@@ -1,0 +1,21 @@
+# Dependencies
+node_modules
+
+# Build output (built files go to ../app/static/dist/)
+dist
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

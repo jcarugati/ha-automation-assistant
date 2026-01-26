@@ -1,0 +1,53 @@
+import { useState, useEffect, useCallback } from 'react'
+import type { ScheduleConfig } from '@/types'
+import { getSchedule, updateSchedule as apiUpdateSchedule } from '@/api'
+
+interface UseScheduleReturn {
+  schedule: ScheduleConfig | null
+  loading: boolean
+  error: string | null
+  refresh: () => Promise<void>
+  updateSchedule: (enabled?: boolean, time?: string) => Promise<void>
+}
+
+export function useSchedule(): UseScheduleReturn {
+  const [schedule, setSchedule] = useState<ScheduleConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getSchedule()
+      setSchedule(data)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load schedule'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const updateSchedule = useCallback(async (enabled?: boolean, time?: string) => {
+    try {
+      const data = await apiUpdateSchedule({ enabled, time })
+      setSchedule(data)
+    } catch (e) {
+      console.error('Failed to update schedule:', e)
+      throw e
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  return {
+    schedule,
+    loading,
+    error,
+    refresh,
+    updateSchedule,
+  }
+}

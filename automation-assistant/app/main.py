@@ -81,13 +81,29 @@ app = FastAPI(
 )
 
 # Mount static files
+# Try to serve from built frontend first, fall back to legacy index.html
 static_path = Path(__file__).parent / "static"
+dist_path = static_path / "dist"
+
+# Mount dist assets if available, otherwise mount static root
+if dist_path.exists():
+    app.mount("/assets", StaticFiles(directory=dist_path / "assets"), name="assets")
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web UI."""
+    # Try built frontend first
+    dist_index = dist_path / "index.html"
+    if dist_index.exists():
+        response = FileResponse(dist_index)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    # Fall back to legacy single-file frontend
     index_path = static_path / "index.html"
     if index_path.exists():
         response = FileResponse(index_path)
