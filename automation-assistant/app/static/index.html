@@ -1004,6 +1004,7 @@
                             </div>
                             <pre class="yaml-display" id="createYaml"></pre>
                             <div id="createValidation" class="message hidden" style="margin-top: 12px;"></div>
+                            <div id="createActionMessage" class="message hidden" style="margin-top: 12px;"></div>
                         </div>
                     </div>
                 </div>
@@ -1085,6 +1086,7 @@
                             <button class="btn btn-primary" id="saveDetailBtn">Save Changes</button>
                             <button class="btn btn-danger" id="deleteDetailBtn">Delete</button>
                         </div>
+                        <div id="detailActionMessage" class="message hidden" style="margin-top: 12px;"></div>
                     </div>
 
                     <!-- Diagnosis Results -->
@@ -1994,9 +1996,21 @@
         }
 
         async function saveAutomation() {
-            if (!currentAutomation) return;
+            if (!currentAutomation) {
+                showActionMessage('detailActionMessage', 'error', 'Select an automation first');
+                return;
+            }
 
             const yaml = document.getElementById('detailYaml').value;
+            if (!yaml.trim()) {
+                showActionMessage('detailActionMessage', 'error', 'YAML is empty');
+                return;
+            }
+            const saveBtn = document.getElementById('saveDetailBtn');
+            const originalLabel = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            showActionMessage('detailActionMessage', 'success', 'Saving changes...');
 
             try {
                 const res = await fetch('api/deploy', {
@@ -2007,16 +2021,28 @@
                         automation_id: currentAutomation.id
                     })
                 });
-                const data = await res.json();
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch (e) {
+                    data = null;
+                }
 
-                if (data.success) {
-                    showSuccess('detailSuccess', data.message);
+                if (res.ok && data?.success) {
+                    showSuccess('detailSuccess', data.message || 'Automation saved');
+                    showActionMessage('detailActionMessage', 'success', 'Saved to Home Assistant');
                     await loadAutomations();
                 } else {
-                    showError('detailError', data.detail || 'Failed to save');
+                    const detail = data?.detail || data?.error || 'Failed to save';
+                    showError('detailError', detail);
+                    showActionMessage('detailActionMessage', 'error', detail);
                 }
             } catch (e) {
                 showError('detailError', 'Failed to save automation');
+                showActionMessage('detailActionMessage', 'error', 'Failed to save automation');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalLabel;
             }
         }
 
@@ -2092,12 +2118,33 @@
             }
         }
 
-        function copyYaml(source) {
+        async function copyYaml(source) {
             const yaml = source === 'create'
                 ? document.getElementById('createYaml').textContent
                 : document.getElementById('detailYaml').value;
 
-            navigator.clipboard.writeText(yaml);
+            const actionMessageId = source === 'create' ? 'createActionMessage' : 'detailActionMessage';
+            const buttonId = source === 'create' ? 'copyCreateBtn' : 'copyDetailBtn';
+            const button = document.getElementById(buttonId);
+
+            if (!yaml?.trim()) {
+                showActionMessage(actionMessageId, 'error', 'Nothing to copy');
+                return;
+            }
+
+            const originalLabel = button?.textContent || 'Copy';
+
+            try {
+                await copyToClipboard(yaml);
+                if (button) {
+                    button.textContent = 'Copied!';
+                    setTimeout(() => { button.textContent = originalLabel; }, 2000);
+                }
+                showActionMessage(actionMessageId, 'success', 'Copied to clipboard');
+            } catch (e) {
+                console.error('Copy failed:', e);
+                showActionMessage(actionMessageId, 'error', 'Copy failed');
+            }
         }
 
         function showDeployModal(source) {
@@ -2185,6 +2232,51 @@
             el.textContent = message;
             el.classList.remove('hidden', 'error');
             el.classList.add('success');
+        }
+
+        function showActionMessage(elementId, type, message, timeout = 2500) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.textContent = message;
+            el.classList.remove('hidden', 'error', 'success');
+            el.classList.add(type === 'error' ? 'error' : 'success');
+            if (timeout) {
+                clearTimeout(el._timeoutId);
+                el._timeoutId = setTimeout(() => {
+                    el.classList.add('hidden');
+                }, timeout);
+            }
+        }
+
+        async function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            const success = fallbackCopyText(text);
+            if (!success) {
+                throw new Error('Clipboard copy failed');
+            }
+        }
+
+        function fallbackCopyText(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '-1000px';
+            textarea.style.left = '-1000px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            let copied = false;
+            try {
+                copied = document.execCommand('copy');
+            } catch (e) {
+                copied = false;
+            }
+            document.body.removeChild(textarea);
+            return copied;
         }
 
         function escapeHtml(str) {
