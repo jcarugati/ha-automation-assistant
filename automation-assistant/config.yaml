@@ -1,6 +1,6 @@
 name: Automation Assistant
 description: Create Home Assistant automations using natural language powered by Claude AI
-version: "2.0.16"
+version: "2.1.1"
 slug: automation_assistant
 init: false
 arch:
