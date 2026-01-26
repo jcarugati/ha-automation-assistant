@@ -36,11 +36,11 @@ export function highlightYaml(yaml: string): string {
       }
 
       // Key
-      result += `<span class="yaml-key">${escapeHtml(key)}</span><span class="yaml-punctuation">:</span>`
+      result += `<span class="yaml-key">${escapeHtml(key ?? "")}</span><span class="yaml-punctuation">:</span>`
 
       // Value
       if (rest && rest.trim()) {
-        result += highlightValue(rest)
+        result += highlightValue(rest ?? "")
       }
 
       return result
