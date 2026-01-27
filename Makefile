@@ -1,6 +1,7 @@
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 APP_DIR := automation-assistant
 FRONTEND_DIR := $(APP_DIR)/frontend
-VENV_PYTHON := .venv/bin/python
+VENV_PYTHON := $(ROOT_DIR).venv/bin/python
 PYTHON := $(shell if [ -x $(VENV_PYTHON) ]; then echo $(VENV_PYTHON); else echo python3; fi)
 UVICORN := $(PYTHON) -m uvicorn
 
@@ -12,6 +13,7 @@ CLAUDE_API_KEY ?=
 SUPERVISOR_TOKEN ?=
 HA_URL ?=
 MODEL ?= claude-sonnet-4-20250514
+DOCTOR_MODEL ?=
 LOG_LEVEL ?= info
 HA_CONFIG_PATH ?=
 
@@ -19,6 +21,7 @@ export CLAUDE_API_KEY
 export SUPERVISOR_TOKEN
 export HA_URL
 export MODEL
+export DOCTOR_MODEL
 export LOG_LEVEL
 export HA_CONFIG_PATH
 
@@ -26,7 +29,7 @@ export HA_CONFIG_PATH
 
 # Install Python dependencies
 deps:
-	cd $(APP_DIR) && pip3 install -r requirements.txt
+	cd $(APP_DIR) && $(PYTHON) -m pip install -r requirements.txt
 
 # Install frontend dependencies
 install:

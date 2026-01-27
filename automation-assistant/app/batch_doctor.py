@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from .config import config
 from .diagnostic_storage import diagnostic_storage
 from .ha_automations import ha_automation_reader
 from .ha_client import ha_client
@@ -35,7 +36,7 @@ class BatchDiagnosisService:
     MAX_BATCH_SIZE = 30
 
     def __init__(self):
-        self.llm_client = AsyncClaudeClient()
+        self.llm_client = AsyncClaudeClient(model=config.doctor_model_or_default)
         self._cancel_requested = False
         self._is_running = False
 

@@ -7,7 +7,13 @@ interface UseScheduleReturn {
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
-  updateSchedule: (enabled?: boolean, time?: string) => Promise<void>
+  updateSchedule: (request: {
+    enabled?: boolean
+    time?: string
+    frequency?: ScheduleConfig['frequency']
+    day_of_week?: string
+    day_of_month?: number
+  }) => Promise<void>
 }
 
 export function useSchedule(): UseScheduleReturn {
@@ -29,9 +35,15 @@ export function useSchedule(): UseScheduleReturn {
     }
   }, [])
 
-  const updateSchedule = useCallback(async (enabled?: boolean, time?: string) => {
+  const updateSchedule = useCallback(async (request: {
+    enabled?: boolean
+    time?: string
+    frequency?: ScheduleConfig['frequency']
+    day_of_week?: string
+    day_of_month?: number
+  }) => {
     try {
-      const data = await apiUpdateSchedule({ enabled, time })
+      const data = await apiUpdateSchedule(request)
       setSchedule(data)
     } catch (e) {
       console.error('Failed to update schedule:', e)

@@ -17,6 +17,24 @@ class DiagnosisScheduler:
     """Manages scheduled diagnosis runs."""
 
     JOB_ID = "daily_diagnosis"
+    DEFAULT_CONFIG = {
+        "enabled": True,
+        "time": "03:00",
+        "frequency": "daily",
+        "day_of_week": "mon",
+        "day_of_month": 1,
+    }
+    VALID_FREQUENCIES = {"daily", "weekly", "monthly"}
+    VALID_WEEKDAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+    WEEKDAY_ALIASES = {
+        "monday": "mon",
+        "tuesday": "tue",
+        "wednesday": "wed",
+        "thursday": "thu",
+        "friday": "fri",
+        "saturday": "sat",
+        "sunday": "sun",
+    }
     CONFIG_FILE = "/config/automation_assistant/scheduler_config.json"
 
     def __init__(self):
@@ -30,10 +48,26 @@ class DiagnosisScheduler:
         if config_path.exists():
             try:
                 with open(config_path, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        config = dict(self.DEFAULT_CONFIG)
+                        config.update(data)
+                        if config.get("frequency") not in self.VALID_FREQUENCIES:
+                            config["frequency"] = self.DEFAULT_CONFIG["frequency"]
+                        if config.get("day_of_week") not in self.VALID_WEEKDAYS:
+                            config["day_of_week"] = self.DEFAULT_CONFIG["day_of_week"]
+                        try:
+                            day_of_month = int(config.get("day_of_month", 1))
+                        except (TypeError, ValueError):
+                            day_of_month = self.DEFAULT_CONFIG["day_of_month"]
+                        if not 1 <= day_of_month <= 31:
+                            day_of_month = self.DEFAULT_CONFIG["day_of_month"]
+                        config["day_of_month"] = day_of_month
+                        return config
+                    logger.error("Scheduler config is not a dictionary, using defaults")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load scheduler config: {e}")
-        return {"enabled": True, "time": "03:00"}
+        return dict(self.DEFAULT_CONFIG)
 
     def _save_config(self) -> None:
         """Save scheduler configuration."""
@@ -59,7 +93,7 @@ class DiagnosisScheduler:
         logger.info("Diagnosis scheduler started")
 
     def _schedule_job(self) -> None:
-        """Schedule the daily diagnosis job."""
+        """Schedule the diagnosis job."""
         time_str = self._config.get("time", "03:00")
         try:
             hour, minute = map(int, time_str.split(":"))
@@ -71,15 +105,44 @@ class DiagnosisScheduler:
         if self.scheduler.get_job(self.JOB_ID):
             self.scheduler.remove_job(self.JOB_ID)
 
-        trigger = CronTrigger(hour=hour, minute=minute)
+        frequency = str(self._config.get("frequency", "daily")).lower()
+        if frequency not in self.VALID_FREQUENCIES:
+            logger.error(f"Invalid frequency: {frequency}, defaulting to daily")
+            frequency = "daily"
+
+        if frequency == "weekly":
+            day_of_week = str(self._config.get("day_of_week", "mon")).lower()
+            if day_of_week not in self.VALID_WEEKDAYS:
+                logger.error(f"Invalid day_of_week: {day_of_week}, defaulting to mon")
+                day_of_week = "mon"
+            trigger = CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute)
+            schedule_label = f"weekly on {day_of_week}"
+        elif frequency == "monthly":
+            day_of_month = self._config.get("day_of_month", 1)
+            try:
+                day_of_month_int = int(day_of_month)
+            except (TypeError, ValueError):
+                logger.error(f"Invalid day_of_month: {day_of_month}, defaulting to 1")
+                day_of_month_int = 1
+            if not 1 <= day_of_month_int <= 31:
+                logger.error(
+                    f"Invalid day_of_month: {day_of_month_int}, defaulting to 1"
+                )
+                day_of_month_int = 1
+            trigger = CronTrigger(day=day_of_month_int, hour=hour, minute=minute)
+            schedule_label = f"monthly on day {day_of_month_int}"
+        else:
+            trigger = CronTrigger(hour=hour, minute=minute)
+            schedule_label = "daily"
+
         self.scheduler.add_job(
             self._run_scheduled_diagnosis,
             trigger=trigger,
             id=self.JOB_ID,
-            name="Daily Automation Diagnosis",
+            name="Scheduled Automation Diagnosis",
             replace_existing=True,
         )
-        logger.info(f"Scheduled daily diagnosis at {time_str}")
+        logger.info(f"Scheduled {schedule_label} diagnosis at {time_str}")
 
     async def _run_scheduled_diagnosis(self) -> None:
         """Called by scheduler to run diagnosis."""
@@ -115,17 +178,28 @@ class DiagnosisScheduler:
         return {
             "enabled": self._config.get("enabled", True),
             "time": self._config.get("time", "03:00"),
+            "frequency": self._config.get("frequency", "daily"),
+            "day_of_week": self._config.get("day_of_week", "mon"),
+            "day_of_month": self._config.get("day_of_month", 1),
             "next_run": next_run,
         }
 
     def update_schedule(
-        self, time: Optional[str] = None, enabled: Optional[bool] = None
+        self,
+        time: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        frequency: Optional[str] = None,
+        day_of_week: Optional[str] = None,
+        day_of_month: Optional[int] = None,
     ) -> dict[str, Any]:
         """Update schedule configuration.
 
         Args:
             time: New time in HH:MM format
             enabled: Whether scheduling is enabled
+            frequency: daily, weekly, or monthly
+            day_of_week: Day of week for weekly schedule (mon-sun)
+            day_of_month: Day of month for monthly schedule (1-31)
 
         Returns:
             Updated configuration
@@ -143,6 +217,25 @@ class DiagnosisScheduler:
         if enabled is not None:
             self._config["enabled"] = enabled
 
+        if frequency is not None:
+            normalized_frequency = frequency.strip().lower()
+            if normalized_frequency not in self.VALID_FREQUENCIES:
+                raise ValueError("Invalid frequency. Use daily, weekly, or monthly.")
+            self._config["frequency"] = normalized_frequency
+
+        if day_of_week is not None:
+            normalized_day = self._normalize_day_of_week(day_of_week)
+            self._config["day_of_week"] = normalized_day
+
+        if day_of_month is not None:
+            try:
+                day_of_month_int = int(day_of_month)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"Invalid day of month: {e}")
+            if not 1 <= day_of_month_int <= 31:
+                raise ValueError("Day of month must be between 1 and 31.")
+            self._config["day_of_month"] = day_of_month_int
+
         self._save_config()
 
         # Update the scheduled job
@@ -156,6 +249,28 @@ class DiagnosisScheduler:
                     logger.info("Diagnosis schedule disabled")
 
         return self.get_schedule()
+
+    def _normalize_day_of_week(self, day_of_week: str) -> str:
+        """Normalize day of week strings to cron-compatible values."""
+        if not day_of_week:
+            raise ValueError("Day of week cannot be empty.")
+
+        parts = [part.strip().lower() for part in day_of_week.split(",") if part.strip()]
+        if not parts:
+            raise ValueError("Day of week cannot be empty.")
+
+        normalized: list[str] = []
+        for part in parts:
+            if part in self.VALID_WEEKDAYS:
+                normalized.append(part)
+                continue
+            alias = self.WEEKDAY_ALIASES.get(part)
+            if alias:
+                normalized.append(alias)
+                continue
+            raise ValueError(f"Invalid day of week: {part}")
+
+        return ",".join(normalized)
 
     def trigger_now(self) -> None:
         """Trigger a diagnosis run immediately (outside of schedule)."""

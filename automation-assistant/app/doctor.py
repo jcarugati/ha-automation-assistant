@@ -5,6 +5,7 @@ from typing import Any
 
 from .ha_automations import ha_automation_reader
 from .ha_client import ha_client
+from .config import config
 from .llm.claude import AsyncClaudeClient
 from .models import DiagnosisResponse
 from .prompts import build_debug_system_prompt, build_debug_user_prompt
@@ -16,7 +17,7 @@ class AutomationDoctor:
     """Diagnoses and analyzes Home Assistant automations."""
 
     def __init__(self):
-        self.llm_client = AsyncClaudeClient()
+        self.llm_client = AsyncClaudeClient(model=config.doctor_model_or_default)
 
     async def diagnose(self, automation_id: str) -> DiagnosisResponse:
         """Diagnose an automation and provide analysis.

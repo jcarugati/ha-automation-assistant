@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from toon_format import encode
+
 
 def format_entities(states: list[dict[str, Any]]) -> str:
     """Format entity states for the prompt."""
@@ -88,17 +90,84 @@ def format_devices(
     return "\n".join(lines)
 
 
-def build_system_prompt(context: dict[str, Any]) -> str:
-    """Build the system prompt with Home Assistant context."""
+def build_toon_context(context: dict[str, Any]) -> str:
+    """Build a compact TOON-encoded context payload."""
     states = context.get("states", [])
     services = context.get("services", [])
     areas = context.get("areas", [])
     devices = context.get("devices", [])
 
-    entities_text = format_entities(states)
-    services_text = format_services(services)
-    areas_text = format_areas(areas)
-    devices_text = format_devices(devices, areas)
+    compact_areas = [
+        {
+            "area_id": area.get("area_id", ""),
+            "name": area.get("name", "Unknown"),
+        }
+        for area in areas
+    ]
+
+    area_lookup = {a.get("area_id"): a.get("name", "") for a in areas}
+    compact_devices = []
+    for device in devices[:100]:
+        name = device.get("name_by_user") or device.get("name", "Unknown")
+        compact_devices.append(
+            {
+                "name": name,
+                "manufacturer": device.get("manufacturer", ""),
+                "model": device.get("model", ""),
+                "area": area_lookup.get(device.get("area_id"), ""),
+            }
+        )
+
+    domain_entities: dict[str, list[dict[str, Any]]] = {}
+    for state in states:
+        entity_id = state.get("entity_id")
+        if not entity_id:
+            continue
+        domain = entity_id.split(".")[0] if "." in entity_id else "unknown"
+        domain_list = domain_entities.setdefault(domain, [])
+        if len(domain_list) >= 50:
+            continue
+        domain_list.append(
+            {
+                "entity_id": entity_id,
+                "name": state.get("attributes", {}).get("friendly_name", entity_id),
+                "state": state.get("state", "unknown"),
+                "domain": domain,
+            }
+        )
+
+    compact_entities: list[dict[str, Any]] = []
+    for domain in sorted(domain_entities.keys()):
+        compact_entities.extend(domain_entities[domain])
+
+    compact_services = []
+    for domain_data in services:
+        domain = domain_data.get("domain", "unknown")
+        domain_services = domain_data.get("services", {})
+        if not domain_services:
+            continue
+        for service_name, service_info in list(domain_services.items())[:20]:
+            compact_services.append(
+                {
+                    "domain": domain,
+                    "service": service_name,
+                    "description": service_info.get("description", "No description"),
+                }
+            )
+
+    payload = {
+        "areas": compact_areas,
+        "devices": compact_devices,
+        "entities": compact_entities,
+        "services": compact_services,
+    }
+
+    return encode(payload)
+
+
+def build_system_prompt(context: dict[str, Any]) -> str:
+    """Build the system prompt with Home Assistant context."""
+    toon_context = build_toon_context(context)
 
     return f"""You are a Home Assistant automation expert. Your task is to generate valid Home Assistant automation YAML based on user requests.
 
@@ -107,17 +176,11 @@ def build_system_prompt(context: dict[str, Any]) -> str:
 - Use the available entities, services, areas, and devices in this Home Assistant instance
 - Generate syntactically correct YAML that can be directly copied into Home Assistant
 
-## Available Areas
-{areas_text}
-
-## Available Devices
-{devices_text}
-
-## Available Entities
-{entities_text}
-
-## Available Services
-{services_text}
+## Available Context (TOON format)
+The following data is encoded in TOON (a compact JSON-like format). Decode it to access areas, devices, entities, and services.
+```toon
+{toon_context}
+```
 
 ## Output Format
 Always respond with:

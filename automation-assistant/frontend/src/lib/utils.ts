@@ -19,9 +19,95 @@ export function escapeHtml(str: string | null | undefined): string {
 
 export function formatMarkdown(text: string | null | undefined): string {
   if (!text) return ''
-  return escapeHtml(text)
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')
+  const escaped = escapeHtml(text)
+  const codeBlocks: string[] = []
+  const withPlaceholders = escaped.replace(/```([\s\S]*?)```/g, (_match, code) => {
+    const index = codeBlocks.length
+    const cleaned = String(code).replace(/^\n+|\n+$/g, '')
+    codeBlocks.push(`<pre><code>${cleaned}</code></pre>`)
+    return `__CODE_BLOCK_${index}__`
+  })
+
+  const lines = withPlaceholders.split(/\r?\n/)
+  const htmlParts: string[] = []
+  let listType: 'ul' | 'ol' | null = null
+
+  const closeList = () => {
+    if (listType) {
+      htmlParts.push(`</${listType}>`)
+      listType = null
+    }
+  }
+
+  const formatInline = (input: string) => {
+    return input
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) {
+      closeList()
+      continue
+    }
+
+    const codeMatch = line.match(/^__CODE_BLOCK_(\d+)__$/)
+    if (codeMatch) {
+      closeList()
+      htmlParts.push(line)
+      continue
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/)
+    if (headingMatch) {
+      closeList()
+      const level = headingMatch[1]?.length ?? 1
+      const headingText = headingMatch[2] ?? ''
+      htmlParts.push(`<h${level}>${formatInline(headingText)}</h${level}>`)
+      continue
+    }
+
+    if (/^---+$/.test(line)) {
+      closeList()
+      htmlParts.push('<hr />')
+      continue
+    }
+
+    const orderedMatch = line.match(/^\d+\.\s+(.*)$/)
+    if (orderedMatch) {
+      if (listType !== 'ol') {
+        closeList()
+        htmlParts.push('<ol>')
+        listType = 'ol'
+      }
+      htmlParts.push(`<li>${formatInline(orderedMatch[1] ?? '')}</li>`)
+      continue
+    }
+
+    const unorderedMatch = line.match(/^[-*]\s+(.*)$/)
+    if (unorderedMatch) {
+      if (listType !== 'ul') {
+        closeList()
+        htmlParts.push('<ul>')
+        listType = 'ul'
+      }
+      htmlParts.push(`<li>${formatInline(unorderedMatch[1] ?? '')}</li>`)
+      continue
+    }
+
+    closeList()
+    htmlParts.push(`<p>${formatInline(rawLine)}</p>`)
+  }
+
+  closeList()
+
+  const html = htmlParts.join('\n')
+  return html.replace(/__CODE_BLOCK_(\d+)__/g, (_match, index) => {
+    const blockIndex = Number(index)
+    return codeBlocks[blockIndex] ?? ''
+  })
 }
 
 export function formatDuration(durationMs: number): string {

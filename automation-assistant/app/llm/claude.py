@@ -1,6 +1,7 @@
 """Claude API client implementation."""
 
 import logging
+from typing import Optional
 
 import anthropic
 
@@ -13,9 +14,9 @@ logger = logging.getLogger(__name__)
 class ClaudeClient(LLMClient):
     """Claude API client for automation generation."""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         self.client = anthropic.Anthropic(api_key=config.claude_api_key)
-        self.model = config.model
+        self.model = model or config.model
 
     async def generate_automation(
         self, system_prompt: str, user_prompt: str
@@ -60,9 +61,9 @@ class ClaudeClient(LLMClient):
 class AsyncClaudeClient(LLMClient):
     """Async Claude API client for automation generation."""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         self.client = anthropic.AsyncAnthropic(api_key=config.claude_api_key)
-        self.model = config.model
+        self.model = model or config.model
 
     async def generate_automation(
         self, system_prompt: str, user_prompt: str

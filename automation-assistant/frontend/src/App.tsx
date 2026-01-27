@@ -115,8 +115,14 @@ export default function App() {
   }, [])
 
   // Schedule modal
-  const handleSaveSchedule = useCallback(async (enabled: boolean, time: string) => {
-    await updateSchedule(enabled, time)
+  const handleSaveSchedule = useCallback(async (request: {
+    enabled: boolean
+    time: string
+    frequency: 'daily' | 'weekly' | 'monthly'
+    day_of_week: string
+    day_of_month: number
+  }) => {
+    await updateSchedule(request)
   }, [updateSchedule])
 
   // Delete handler

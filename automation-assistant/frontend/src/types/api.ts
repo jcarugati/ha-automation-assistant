@@ -94,12 +94,18 @@ export interface AutomationConflict {
 export interface ScheduleConfig {
   enabled: boolean
   time: string
+  frequency: 'daily' | 'weekly' | 'monthly'
+  day_of_week: string
+  day_of_month: number
   next_run?: string
 }
 
 export interface ScheduleUpdateRequest {
   time?: string
   enabled?: boolean
+  frequency?: 'daily' | 'weekly' | 'monthly'
+  day_of_week?: string
+  day_of_month?: number
 }
 
 // Version

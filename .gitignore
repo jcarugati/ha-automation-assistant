@@ -6,4 +6,5 @@ AGENTS.md
 # Local development
 run-local.sh
 .env
+.examples/*
 automation-assistant/.env

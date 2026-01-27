@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .automation import format_areas, format_devices, format_entities, format_services
+from .automation import build_toon_context
 
 
 def format_traces(traces: list[dict[str, Any]]) -> str:
@@ -32,15 +32,7 @@ def format_traces(traces: list[dict[str, Any]]) -> str:
 
 def build_debug_system_prompt(context: dict[str, Any]) -> str:
     """Build the system prompt for automation debugging."""
-    states = context.get("states", [])
-    services = context.get("services", [])
-    areas = context.get("areas", [])
-    devices = context.get("devices", [])
-
-    entities_text = format_entities(states)
-    services_text = format_services(services)
-    areas_text = format_areas(areas)
-    devices_text = format_devices(devices, areas)
+    toon_context = build_toon_context(context)
 
     return f"""You are a Home Assistant automation debugger and optimizer. Your task is to analyze existing automations, identify issues, and suggest improvements.
 
@@ -62,17 +54,11 @@ When analyzing an automation, check for:
 7. **Mode Settings**: Is the automation mode (single, restart, queued, parallel) appropriate?
 8. **Performance**: Are there unnecessary delays or inefficiencies?
 
-## Available Areas
-{areas_text}
-
-## Available Devices
-{devices_text}
-
-## Available Entities
-{entities_text}
-
-## Available Services
-{services_text}
+## Available Context (TOON format)
+The following data is encoded in TOON (a compact JSON-like format). Decode it to access areas, devices, entities, and services.
+```toon
+{toon_context}
+```
 
 ## Output Format
 Structure your analysis with these sections:

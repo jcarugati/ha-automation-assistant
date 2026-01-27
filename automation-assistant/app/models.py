@@ -227,7 +227,10 @@ class ScheduleConfig(BaseModel):
     """Schedule configuration."""
 
     enabled: bool = Field(True, description="Whether scheduling is enabled")
-    time: str = Field("03:00", description="Time to run daily (HH:MM format)")
+    time: str = Field("03:00", description="Time to run (HH:MM format)")
+    frequency: str = Field("daily", description="Schedule frequency (daily, weekly, monthly)")
+    day_of_week: str = Field("mon", description="Day of week for weekly schedules (mon-sun)")
+    day_of_month: int = Field(1, description="Day of month for monthly schedules (1-31)")
     next_run: Optional[datetime] = Field(None, description="Next scheduled run time")
 
 

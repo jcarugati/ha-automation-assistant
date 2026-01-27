@@ -3,6 +3,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -22,6 +23,7 @@ class Config:
 
     claude_api_key: str
     model: str
+    doctor_model: Optional[str]
     log_level: str
     supervisor_token: str
     ha_base_url: str = "http://supervisor/core"
@@ -48,6 +50,7 @@ class Config:
         return cls(
             claude_api_key=os.environ.get("CLAUDE_API_KEY", ""),
             model=os.environ.get("MODEL", "claude-sonnet-4-20250514"),
+            doctor_model=os.environ.get("DOCTOR_MODEL", "").strip() or None,
             log_level=os.environ.get("LOG_LEVEL", "info"),
             supervisor_token=os.environ.get("SUPERVISOR_TOKEN", ""),
             ha_base_url=ha_base_url,
@@ -58,6 +61,11 @@ class Config:
     def is_configured(self) -> bool:
         """Check if the add-on is properly configured."""
         return bool(self.claude_api_key)
+
+    @property
+    def doctor_model_or_default(self) -> str:
+        """Return the doctor model or fall back to the default model."""
+        return self.doctor_model or self.model
 
 
 config = Config.from_env()

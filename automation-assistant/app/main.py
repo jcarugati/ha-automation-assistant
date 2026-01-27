@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     logger.info("Starting Automation Assistant")
     logger.info(f"Using model: {config.model}")
+    logger.info(f"Using doctor model: {config.doctor_model_or_default}")
     logger.info(f"API key configured: {config.is_configured}")
 
     # Start the diagnosis scheduler
@@ -450,6 +451,9 @@ class ScheduleUpdateRequest(BaseModel):
     """Request model for updating schedule."""
     time: Optional[str] = None
     enabled: Optional[bool] = None
+    frequency: Optional[str] = None
+    day_of_week: Optional[str] = None
+    day_of_month: Optional[int] = None
 
 
 @app.put("/api/doctor/schedule", response_model=ScheduleConfig)
@@ -459,6 +463,9 @@ async def update_schedule(request: ScheduleUpdateRequest):
         config_data = diagnosis_scheduler.update_schedule(
             time=request.time,
             enabled=request.enabled,
+            frequency=request.frequency,
+            day_of_week=request.day_of_week,
+            day_of_month=request.day_of_month,
         )
         return ScheduleConfig(**config_data)
     except ValueError as e:
@@ -595,7 +602,7 @@ Provide a corrected version of the automation(s) that fixes the issue.
 - Keep the original id and alias
 - Only change what's necessary to fix the issue"""
 
-        llm = AsyncClaudeClient()
+        llm = AsyncClaudeClient(model=config.doctor_model_or_default)
         fix_suggestion = await llm.generate_automation(
             "You are a Home Assistant automation expert. Return only valid YAML.",
             prompt,
