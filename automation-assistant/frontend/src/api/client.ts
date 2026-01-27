@@ -1,4 +1,7 @@
-const API_BASE = '/api'
+const API_BASE = new URL(
+  "api",
+  `${window.location.origin}${window.location.pathname}`
+).toString()
 
 export class ApiError extends Error {
   constructor(
