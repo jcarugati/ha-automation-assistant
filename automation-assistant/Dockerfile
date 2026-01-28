@@ -1,6 +1,9 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
+# Git is required for pip installs from git+ URLs in requirements.txt.
+RUN apk add --no-cache git
+
 # Set working directory
 WORKDIR /app
 
