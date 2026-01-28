@@ -60,12 +60,7 @@ export function WelcomeView({
         </p>
       </div>
 
-      <StatsGrid
-        total={total}
-        healthy={healthy}
-        withIssues={withIssues}
-        disabled={disabled}
-      />
+      <StatsGrid total={total} healthy={healthy} withIssues={withIssues} disabled={disabled} />
 
       <Card>
         <CardHeader>

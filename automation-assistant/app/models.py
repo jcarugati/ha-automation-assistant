@@ -9,14 +9,20 @@ from pydantic import BaseModel, Field
 class AutomationRequest(BaseModel):
     """Request model for automation generation."""
 
-    prompt: str = Field(..., min_length=1, description="Natural language automation request")
+    prompt: str = Field(
+        ..., min_length=1, description="Natural language automation request"
+    )
 
 
 class ModifyAutomationRequest(BaseModel):
     """Request model for modifying an existing automation."""
 
-    prompt: str = Field(..., min_length=1, description="Natural language modification request")
-    existing_yaml: str = Field(..., min_length=1, description="Current YAML of the automation to modify")
+    prompt: str = Field(
+        ..., min_length=1, description="Natural language modification request"
+    )
+    existing_yaml: str = Field(
+        ..., min_length=1, description="Current YAML of the automation to modify"
+    )
 
 
 class AutomationResponse(BaseModel):
@@ -33,14 +39,18 @@ class AutomationResponse(BaseModel):
 class ValidationRequest(BaseModel):
     """Request model for YAML validation."""
 
-    yaml_content: str = Field(..., min_length=1, description="YAML content to validate")
+    yaml_content: str = Field(
+        ..., min_length=1, description="YAML content to validate"
+    )
 
 
 class ValidationResponse(BaseModel):
     """Response model for YAML validation."""
 
     valid: bool = Field(..., description="Whether the YAML is valid")
-    errors: list[str] = Field(default_factory=list, description="List of validation errors")
+    errors: list[str] = Field(
+        default_factory=list, description="List of validation errors"
+    )
 
 
 class ContextSummary(BaseModel):
@@ -50,7 +60,9 @@ class ContextSummary(BaseModel):
     device_count: int = Field(..., description="Number of devices")
     area_count: int = Field(..., description="Number of areas")
     service_count: int = Field(..., description="Number of available services")
-    domains: list[str] = Field(default_factory=list, description="List of entity domains")
+    domains: list[str] = Field(
+        default_factory=list, description="List of entity domains"
+    )
 
 
 class HAContext(BaseModel):
@@ -84,7 +96,9 @@ class SavedAutomation(BaseModel):
 class SaveAutomationRequest(BaseModel):
     """Request model for saving an automation."""
 
-    name: str = Field(..., min_length=1, max_length=100, description="Name for the automation")
+    name: str = Field(
+        ..., min_length=1, max_length=100, description="Name for the automation"
+    )
     prompt: str = Field(..., min_length=1, description="Original prompt")
     yaml_content: str = Field(..., min_length=1, description="YAML content to save")
 
@@ -99,7 +113,9 @@ class UpdateAutomationRequest(BaseModel):
 class SavedAutomationList(BaseModel):
     """Response model for list of saved automations."""
 
-    automations: list[SavedAutomation] = Field(default_factory=list, description="List of saved automations")
+    automations: list[SavedAutomation] = Field(
+        default_factory=list, description="List of saved automations"
+    )
     count: int = Field(..., description="Total count of saved automations")
 
 
@@ -127,7 +143,9 @@ class HAAutomationList(BaseModel):
 class DiagnoseRequest(BaseModel):
     """Request model for diagnosing an automation."""
 
-    automation_id: str = Field(..., min_length=1, description="ID of the automation to diagnose")
+    automation_id: str = Field(
+        ..., min_length=1, description="ID of the automation to diagnose"
+    )
 
 
 class DiagnosisResponse(BaseModel):
@@ -136,7 +154,9 @@ class DiagnosisResponse(BaseModel):
     automation_id: str = Field(..., description="ID of the diagnosed automation")
     automation_alias: str = Field(..., description="Alias/name of the automation")
     automation_yaml: str = Field(..., description="Full YAML of the automation")
-    traces_summary: list[dict[str, Any]] = Field(default_factory=list, description="Recent execution traces")
+    traces_summary: list[dict[str, Any]] = Field(
+        default_factory=list, description="Recent execution traces"
+    )
     analysis: str = Field(..., description="Claude's analysis and recommendations")
     success: bool = Field(..., description="Whether diagnosis was successful")
     error: Optional[str] = Field(None, description="Error message if diagnosis failed")
@@ -148,12 +168,24 @@ class DiagnosisResponse(BaseModel):
 class AutomationConflict(BaseModel):
     """Detected conflict between automations."""
 
-    conflict_type: str = Field(..., description="Type: shared_trigger, state_conflict, resource_contention, timing_race, circular_dependency")
+    conflict_type: str = Field(
+        ...,
+        description=(
+            "Type: shared_trigger, state_conflict, resource_contention, "
+            "timing_race, circular_dependency"
+        ),
+    )
     severity: str = Field(..., description="Severity: info, warning, critical")
-    automation_ids: list[str] = Field(default_factory=list, description="IDs of automations involved")
-    automation_names: list[str] = Field(default_factory=list, description="Names of automations involved")
+    automation_ids: list[str] = Field(
+        default_factory=list, description="IDs of automations involved"
+    )
+    automation_names: list[str] = Field(
+        default_factory=list, description="Names of automations involved"
+    )
     description: str = Field(..., description="Description of the conflict")
-    affected_entities: list[str] = Field(default_factory=list, description="Entities affected by the conflict")
+    affected_entities: list[str] = Field(
+        default_factory=list, description="Entities affected by the conflict"
+    )
 
 
 class AutomationDiagnosisSummary(BaseModel):
@@ -172,13 +204,21 @@ class Insight(BaseModel):
 
     insight_id: str = Field(..., description="Unique ID for deduplication")
     category: str = Field(..., description="Category: single or multi")
-    insight_type: str = Field(..., description="Type: error, warning, conflict, best_practice")
+    insight_type: str = Field(
+        ..., description="Type: error, warning, conflict, best_practice"
+    )
     severity: str = Field(..., description="Severity: info, warning, critical")
     title: str = Field(..., description="Short title")
     description: str = Field(..., description="Detailed description")
-    automation_ids: list[str] = Field(default_factory=list, description="Affected automation IDs")
-    automation_names: list[str] = Field(default_factory=list, description="Affected automation names")
-    affected_entities: list[str] = Field(default_factory=list, description="Affected entities")
+    automation_ids: list[str] = Field(
+        default_factory=list, description="Affected automation IDs"
+    )
+    automation_names: list[str] = Field(
+        default_factory=list, description="Affected automation names"
+    )
+    affected_entities: list[str] = Field(
+        default_factory=list, description="Affected entities"
+    )
     recommendation: str = Field("", description="Suggested fix")
     first_seen: datetime = Field(..., description="When first detected")
     last_seen: datetime = Field(..., description="Last time detected")
@@ -188,8 +228,12 @@ class Insight(BaseModel):
 class InsightsList(BaseModel):
     """Response for insights list."""
 
-    single_automation: list[Insight] = Field(default_factory=list, description="Single automation issues")
-    multi_automation: list[Insight] = Field(default_factory=list, description="Multi-automation conflicts")
+    single_automation: list[Insight] = Field(
+        default_factory=list, description="Single automation issues"
+    )
+    multi_automation: list[Insight] = Field(
+        default_factory=list, description="Multi-automation conflicts"
+    )
     total_count: int = Field(0, description="Total insight count")
     unresolved_count: int = Field(0, description="Unresolved insight count")
 
@@ -208,7 +252,9 @@ class BatchDiagnosisReport(BaseModel):
     automation_summaries: list[AutomationDiagnosisSummary] = Field(default_factory=list)
     conflicts: list[AutomationConflict] = Field(default_factory=list)
     overall_summary: str = Field("", description="Overall summary from Claude")
-    full_analyses: list[DiagnosisResponse] = Field(default_factory=list, description="Detailed per-automation analyses")
+    full_analyses: list[DiagnosisResponse] = Field(
+        default_factory=list, description="Detailed per-automation analyses"
+    )
 
 
 class BatchReportSummary(BaseModel):
@@ -228,8 +274,12 @@ class ScheduleConfig(BaseModel):
 
     enabled: bool = Field(True, description="Whether scheduling is enabled")
     time: str = Field("03:00", description="Time to run (HH:MM format)")
-    frequency: str = Field("daily", description="Schedule frequency (daily, weekly, monthly)")
-    day_of_week: str = Field("mon", description="Day of week for weekly schedules (mon-sun)")
+    frequency: str = Field(
+        "daily", description="Schedule frequency (daily, weekly, monthly)"
+    )
+    day_of_week: str = Field(
+        "mon", description="Day of week for weekly schedules (mon-sun)"
+    )
     day_of_month: int = Field(1, description="Day of month for monthly schedules (1-31)")
     next_run: Optional[datetime] = Field(None, description="Next scheduled run time")
 
@@ -240,7 +290,9 @@ class ScheduleConfig(BaseModel):
 class DeployAutomationRequest(BaseModel):
     """Request model for deploying an automation to Home Assistant."""
 
-    yaml_content: str = Field(..., min_length=1, description="YAML content of the automation")
+    yaml_content: str = Field(
+        ..., min_length=1, description="YAML content of the automation"
+    )
     automation_id: Optional[str] = Field(
         None,
         description=(
@@ -262,6 +314,8 @@ class ApplyFixResponse(BaseModel):
     """Response model for applying a fix to Home Assistant."""
 
     success: bool = Field(..., description="Whether the fix was applied successfully")
-    automation_ids: list[str] = Field(default_factory=list, description="IDs of automations that were updated")
+    automation_ids: list[str] = Field(
+        default_factory=list, description="IDs of automations that were updated"
+    )
     message: str = Field(..., description="Status message")
     errors: list[str] = Field(default_factory=list, description="Any errors encountered")

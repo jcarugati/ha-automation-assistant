@@ -4,65 +4,64 @@
  */
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export function highlightYaml(yaml: string): string {
   const lines = yaml.split('\n')
 
-  return lines.map(line => {
-    // Preserve empty lines
-    if (line.trim() === '') {
-      return ''
-    }
-
-    // Comment lines
-    if (line.trim().startsWith('#')) {
-      return `<span class="yaml-comment">${escapeHtml(line)}</span>`
-    }
-
-    // Check for key-value pairs
-    const keyValueMatch = line.match(/^(\s*)(- )?([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/)
-    if (keyValueMatch) {
-      const [, indent, listMarker, key, rest] = keyValueMatch
-      let result = escapeHtml(indent ?? '')
-
-      // List marker
-      if (listMarker) {
-        result += `<span class="yaml-punctuation">${escapeHtml(listMarker)}</span>`
+  return lines
+    .map((line) => {
+      // Preserve empty lines
+      if (line.trim() === '') {
+        return ''
       }
 
-      // Key
-      result += `<span class="yaml-key">${escapeHtml(key ?? "")}</span><span class="yaml-punctuation">:</span>`
-
-      // Value
-      if (rest && rest.trim()) {
-        result += highlightValue(rest ?? "")
+      // Comment lines
+      if (line.trim().startsWith('#')) {
+        return `<span class="yaml-comment">${escapeHtml(line)}</span>`
       }
 
-      return result
-    }
+      // Check for key-value pairs
+      const keyValueMatch = line.match(/^(\s*)(- )?([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/)
+      if (keyValueMatch) {
+        const [, indent, listMarker, key, rest] = keyValueMatch
+        let result = escapeHtml(indent ?? '')
 
-    // List items without keys (e.g., "  - value")
-    const listItemMatch = line.match(/^(\s*)(- )(.+)$/)
-    if (listItemMatch) {
-      const [, indent, marker, value] = listItemMatch
-      return `${escapeHtml(indent ?? '')}<span class="yaml-punctuation">${escapeHtml(marker ?? '')}</span>${highlightValue(value ?? '')}`
-    }
+        // List marker
+        if (listMarker) {
+          result += `<span class="yaml-punctuation">${escapeHtml(listMarker)}</span>`
+        }
 
-    // Just a list marker (e.g., "  -")
-    const emptyListMatch = line.match(/^(\s*)(-)(\s*)$/)
-    if (emptyListMatch) {
-      const [, indent, marker, trailing] = emptyListMatch
-      return `${escapeHtml(indent ?? '')}<span class="yaml-punctuation">${escapeHtml(marker ?? '')}</span>${escapeHtml(trailing ?? '')}`
-    }
+        // Key
+        result += `<span class="yaml-key">${escapeHtml(key ?? '')}</span><span class="yaml-punctuation">:</span>`
 
-    // Default: return escaped line
-    return escapeHtml(line)
-  }).join('\n')
+        // Value
+        if (rest && rest.trim()) {
+          result += highlightValue(rest)
+        }
+
+        return result
+      }
+
+      // List items without keys (e.g., "  - value")
+      const listItemMatch = line.match(/^(\s*)(- )(.+)$/)
+      if (listItemMatch) {
+        const [, indent, marker, value] = listItemMatch
+        return `${escapeHtml(indent ?? '')}<span class="yaml-punctuation">${escapeHtml(marker ?? '')}</span>${highlightValue(value ?? '')}`
+      }
+
+      // Just a list marker (e.g., "  -")
+      const emptyListMatch = line.match(/^(\s*)(-)(\s*)$/)
+      if (emptyListMatch) {
+        const [, indent, marker, trailing] = emptyListMatch
+        return `${escapeHtml(indent ?? '')}<span class="yaml-punctuation">${escapeHtml(marker ?? '')}</span>${escapeHtml(trailing ?? '')}`
+      }
+
+      // Default: return escaped line
+      return escapeHtml(line)
+    })
+    .join('\n')
 }
 
 function highlightValue(value: string): string {
@@ -80,8 +79,10 @@ function highlightValue(value: string): string {
   }
 
   // Quoted strings (single or double)
-  if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-      (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
     return `${escapeHtml(leadingSpace)}<span class="yaml-string">${escapeHtml(trimmed)}</span>`
   }
 

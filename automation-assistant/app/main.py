@@ -1,28 +1,31 @@
 """FastAPI application for Automation Assistant."""
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .automation import automation_generator, validate_automation_yaml
-from .batch_doctor import batch_diagnosis_service
+from .batch_doctor import CancelledException, batch_diagnosis_service
 from .config import VERSION, config
 from .diagnostic_storage import diagnostic_storage
 from .doctor import automation_doctor
+from .ha_automations import ha_automation_reader
 from .ha_client import ha_client
 from .insights_storage import insights_storage
+from .llm.claude import AsyncClaudeClient
 from .models import (
     ApplyFixResponse,
     AutomationRequest,
     AutomationResponse,
     BatchDiagnosisReport,
-    BatchReportSummary,
     ContextSummary,
     DeployAutomationRequest,
     DeployAutomationResponse,
@@ -46,21 +49,21 @@ from .scheduler import diagnosis_scheduler
 from .storage import storage_manager
 
 # Configure logging
-log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+LOG_LEVEL = getattr(logging, config.log_level.upper(), logging.INFO)
 logging.basicConfig(
-    level=log_level,
+    level=LOG_LEVEL,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Application lifespan manager."""
     logger.info("Starting Automation Assistant")
-    logger.info(f"Using model: {config.model}")
-    logger.info(f"Using doctor model: {config.doctor_model_or_default}")
-    logger.info(f"API key configured: {config.is_configured}")
+    logger.info("Using model: %s", config.model)
+    logger.info("Using doctor model: %s", config.doctor_model_or_default)
+    logger.info("API key configured: %s", config.is_configured)
 
     # Start the diagnosis scheduler
     diagnosis_scheduler.start()
@@ -139,11 +142,11 @@ async def generate_automation(request: AutomationRequest):
             detail="Claude API key not configured. Please configure in add-on settings.",
         )
 
-    logger.info(f"Generating automation for: {request.prompt[:100]}...")
+    logger.info("Generating automation for: %s...", request.prompt[:100])
     result = await automation_generator.generate(request.prompt)
 
     if not result.success:
-        logger.error(f"Generation failed: {result.error}")
+        logger.error("Generation failed: %s", result.error)
 
     return result
 
@@ -157,11 +160,11 @@ async def modify_automation(request: ModifyAutomationRequest):
             detail="Claude API key not configured. Please configure in add-on settings.",
         )
 
-    logger.info(f"Modifying automation with request: {request.prompt[:100]}...")
+    logger.info("Modifying automation with request: %s...", request.prompt[:100])
     result = await automation_generator.modify(request.existing_yaml, request.prompt)
 
     if not result.success:
-        logger.error(f"Modification failed: {result.error}")
+        logger.error("Modification failed: %s", result.error)
 
     return result
 
@@ -169,12 +172,8 @@ async def modify_automation(request: ModifyAutomationRequest):
 @app.get("/api/context", response_model=ContextSummary)
 async def get_context():
     """Get a summary of the available Home Assistant context."""
-    try:
-        summary = await automation_generator.get_context_summary()
-        return ContextSummary(**summary)
-    except Exception as e:
-        logger.error(f"Failed to get context: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    summary = await automation_generator.get_context_summary()
+    return ContextSummary(**summary)
 
 
 @app.post("/api/validate", response_model=ValidationResponse)
@@ -199,11 +198,11 @@ async def save_automation(request: SaveAutomationRequest):
             prompt=request.prompt,
             yaml_content=request.yaml_content,
         )
-        logger.info(f"Saved automation: {request.name}")
+        logger.info("Saved automation: %s", request.name)
         return SavedAutomation(**automation)
-    except Exception as e:
-        logger.error(f"Failed to save automation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except OSError as exc:
+        logger.error("Failed to save automation: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/automations/{automation_id}", response_model=SavedAutomation)
@@ -225,7 +224,7 @@ async def update_automation(automation_id: str, request: UpdateAutomationRequest
     )
     if not automation:
         raise HTTPException(status_code=404, detail="Automation not found")
-    logger.info(f"Updated automation: {automation_id}")
+    logger.info("Updated automation: %s", automation_id)
     return SavedAutomation(**automation)
 
 
@@ -235,7 +234,7 @@ async def delete_automation(automation_id: str):
     deleted = await storage_manager.delete(automation_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Automation not found")
-    logger.info(f"Deleted automation: {automation_id}")
+    logger.info("Deleted automation: %s", automation_id)
     return {"success": True}
 
 
@@ -248,16 +247,15 @@ async def deploy_automation(request: DeployAutomationRequest):
 
     This creates or updates an automation in HA and reloads automations.
     """
-    import uuid
-    import yaml
-
     # Parse the YAML content
     try:
         automation_config = yaml.safe_load(request.yaml_content)
         if not automation_config:
             raise HTTPException(status_code=400, detail="Empty YAML content")
-    except yaml.YAMLError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+    except yaml.YAMLError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid YAML: {exc}"
+        ) from exc
 
     # Extract or generate automation ID
     automation_id = request.automation_id
@@ -277,7 +275,9 @@ async def deploy_automation(request: DeployAutomationRequest):
     automation_config["id"] = automation_id
 
     # Deploy to HA
-    result = await ha_client.create_or_update_automation(automation_id, automation_config)
+    result = await ha_client.create_or_update_automation(
+        automation_id, automation_config
+    )
 
     if not result.get("success"):
         error_msg = result.get("error", "Unknown error")
@@ -286,11 +286,15 @@ async def deploy_automation(request: DeployAutomationRequest):
     # Reload automations to apply changes
     reloaded = await ha_client.reload_automations()
     if not reloaded:
-        logger.warning("Automation saved but reload failed - may require manual reload")
+        logger.warning(
+            "Automation saved but reload failed - may require manual reload"
+        )
 
     action = "created" if is_new else "updated"
     alias = automation_config.get("alias", automation_id)
-    logger.info(f"Deployed automation '{alias}' ({automation_id}) - {action}")
+    logger.info(
+        "Deployed automation '%s' (%s) - %s", alias, automation_id, action
+    )
 
     return DeployAutomationResponse(
         success=True,
@@ -305,30 +309,20 @@ async def deploy_automation(request: DeployAutomationRequest):
 @app.get("/api/ha-automations", response_model=HAAutomationList)
 async def list_ha_automations():
     """List all automations from Home Assistant."""
-    try:
-        automations = await automation_doctor.list_automations()
-        return HAAutomationList(
-            automations=[HAAutomationSummary(**a) for a in automations],
-            count=len(automations),
-        )
-    except Exception as e:
-        logger.error(f"Failed to list HA automations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    automations = await automation_doctor.list_automations()
+    return HAAutomationList(
+        automations=[HAAutomationSummary(**a) for a in automations],
+        count=len(automations),
+    )
 
 
 @app.get("/api/ha-automations/{automation_id}")
 async def get_ha_automation(automation_id: str):
     """Get a Home Assistant automation with its traces."""
-    try:
-        details = await automation_doctor.get_automation_details(automation_id)
-        if not details.get("automation"):
-            raise HTTPException(status_code=404, detail="Automation not found")
-        return details
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get HA automation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    details = await automation_doctor.get_automation_details(automation_id)
+    if not details.get("automation"):
+        raise HTTPException(status_code=404, detail="Automation not found")
+    return details
 
 
 @app.post("/api/doctor/diagnose", response_model=DiagnosisResponse)
@@ -340,11 +334,11 @@ async def diagnose_automation(request: DiagnoseRequest):
             detail="Claude API key not configured. Please configure in add-on settings.",
         )
 
-    logger.info(f"Diagnosing automation: {request.automation_id}")
+    logger.info("Diagnosing automation: %s", request.automation_id)
     result = await automation_doctor.diagnose(request.automation_id)
 
     if not result.success:
-        logger.error(f"Diagnosis failed: {result.error}")
+        logger.error("Diagnosis failed: %s", result.error)
 
     return result
 
@@ -371,9 +365,14 @@ async def run_batch_diagnosis():
     try:
         result = await batch_diagnosis_service.run_batch_diagnosis(scheduled=False)
         return result
-    except Exception as e:
-        logger.error(f"Batch diagnosis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except CancelledException as exc:
+        logger.info("Batch diagnosis cancelled: %s", exc)
+        raise HTTPException(
+            status_code=409, detail="Batch diagnosis was cancelled"
+        ) from exc
+    except (RuntimeError, ValueError) as exc:
+        logger.error("Batch diagnosis failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/doctor/cancel")
@@ -381,11 +380,10 @@ async def cancel_batch_diagnosis():
     """Cancel a running batch diagnosis."""
     if batch_diagnosis_service.cancel():
         return {"success": True, "message": "Cancellation requested"}
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="No diagnosis is currently running",
-        )
+    raise HTTPException(
+        status_code=400,
+        detail="No diagnosis is currently running",
+    )
 
 
 @app.get("/api/doctor/status")
@@ -399,42 +397,26 @@ async def get_diagnosis_status():
 @app.get("/api/doctor/reports")
 async def list_diagnosis_reports():
     """List all diagnosis reports (summaries only)."""
-    try:
-        reports = await diagnostic_storage.list_reports()
-        return {"reports": reports, "count": len(reports)}
-    except Exception as e:
-        logger.error(f"Failed to list reports: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    reports = await diagnostic_storage.list_reports()
+    return {"reports": reports, "count": len(reports)}
 
 
 @app.get("/api/doctor/reports/latest")
 async def get_latest_report():
     """Get the most recent full diagnosis report."""
-    try:
-        report = await diagnostic_storage.get_latest_report()
-        if not report:
-            raise HTTPException(status_code=404, detail="No diagnosis reports found")
-        return report
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get latest report: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    report = await diagnostic_storage.get_latest_report()
+    if not report:
+        raise HTTPException(status_code=404, detail="No diagnosis reports found")
+    return report
 
 
 @app.get("/api/doctor/reports/{run_id}")
 async def get_report(run_id: str):
     """Get a specific diagnosis report by run ID."""
-    try:
-        report = await diagnostic_storage.get_report(run_id)
-        if not report:
-            raise HTTPException(status_code=404, detail="Report not found")
-        return report
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get report {run_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    report = await diagnostic_storage.get_report(run_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
 
 
 # Schedule endpoints
@@ -460,19 +442,11 @@ class ScheduleUpdateRequest(BaseModel):
 async def update_schedule(request: ScheduleUpdateRequest):
     """Update scheduled run time and/or enabled status."""
     try:
-        config_data = diagnosis_scheduler.update_schedule(
-            time=request.time,
-            enabled=request.enabled,
-            frequency=request.frequency,
-            day_of_week=request.day_of_week,
-            day_of_month=request.day_of_month,
-        )
+        updates = request.model_dump()
+        config_data = diagnosis_scheduler.update_schedule(updates)
         return ScheduleConfig(**config_data)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Failed to update schedule: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # Insights endpoints
@@ -481,72 +455,48 @@ async def update_schedule(request: ScheduleUpdateRequest):
 @app.get("/api/doctor/insights", response_model=InsightsList)
 async def get_insights():
     """Get all insights, separated by category (single/multi)."""
-    try:
-        single = await insights_storage.get_single_automation_insights()
-        multi = await insights_storage.get_multi_automation_insights()
-        unresolved = await insights_storage.get_unresolved_count()
+    single = await insights_storage.get_single_automation_insights()
+    multi = await insights_storage.get_multi_automation_insights()
+    unresolved = await insights_storage.get_unresolved_count()
 
-        return InsightsList(
-            single_automation=[Insight(**i) for i in single],
-            multi_automation=[Insight(**i) for i in multi],
-            total_count=len(single) + len(multi),
-            unresolved_count=unresolved,
-        )
-    except Exception as e:
-        logger.error(f"Failed to get insights: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return InsightsList(
+        single_automation=[Insight(**i) for i in single],
+        multi_automation=[Insight(**i) for i in multi],
+        total_count=len(single) + len(multi),
+        unresolved_count=unresolved,
+    )
 
 
 @app.get("/api/doctor/insights/single")
 async def get_single_insights():
     """Get insights for single automation issues."""
-    try:
-        insights = await insights_storage.get_single_automation_insights()
-        return {"insights": insights, "count": len(insights)}
-    except Exception as e:
-        logger.error(f"Failed to get single insights: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    insights = await insights_storage.get_single_automation_insights()
+    return {"insights": insights, "count": len(insights)}
 
 
 @app.get("/api/doctor/insights/multi")
 async def get_multi_insights():
     """Get insights for multi-automation conflicts."""
-    try:
-        insights = await insights_storage.get_multi_automation_insights()
-        return {"insights": insights, "count": len(insights)}
-    except Exception as e:
-        logger.error(f"Failed to get multi insights: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    insights = await insights_storage.get_multi_automation_insights()
+    return {"insights": insights, "count": len(insights)}
 
 
 @app.put("/api/doctor/insights/{insight_id}/resolve")
 async def resolve_insight(insight_id: str, resolved: bool = Query(True)):
     """Mark an insight as resolved or unresolved."""
-    try:
-        success = await insights_storage.mark_resolved(insight_id, resolved)
-        if not success:
-            raise HTTPException(status_code=404, detail="Insight not found")
-        return {"success": True, "insight_id": insight_id, "resolved": resolved}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to resolve insight {insight_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    success = await insights_storage.mark_resolved(insight_id, resolved)
+    if not success:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    return {"success": True, "insight_id": insight_id, "resolved": resolved}
 
 
 @app.delete("/api/doctor/insights/{insight_id}")
 async def delete_insight(insight_id: str):
     """Delete an insight permanently."""
-    try:
-        success = await insights_storage.delete_insight(insight_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Insight not found")
-        return {"success": True, "insight_id": insight_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to delete insight {insight_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    success = await insights_storage.delete_insight(insight_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    return {"success": True, "insight_id": insight_id}
 
 
 @app.post("/api/doctor/insights/{insight_id}/fix")
@@ -558,69 +508,70 @@ async def get_insight_fix(insight_id: str):
             detail="Claude API key not configured.",
         )
 
-    try:
-        # Get the insight
-        all_insights = await insights_storage.get_all()
-        insight = next((i for i in all_insights if i.get("insight_id") == insight_id), None)
-        if not insight:
-            raise HTTPException(status_code=404, detail="Insight not found")
+    # Get the insight
+    all_insights = await insights_storage.get_all()
+    insight = next(
+        (item for item in all_insights if item.get("insight_id") == insight_id),
+        None,
+    )
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found")
 
-        # Get the automation(s) involved
-        from .ha_automations import ha_automation_reader
-        from .llm.claude import AsyncClaudeClient
+    # Get the automation(s) involved
+    automations = []
+    for auto_id in insight.get("automation_ids", []):
+        auto = await ha_automation_reader.get_automation(auto_id)
+        if auto:
+            automations.append(auto)
 
-        automations = []
-        for auto_id in insight.get("automation_ids", []):
-            auto = await ha_automation_reader.get_automation(auto_id)
-            if auto:
-                automations.append(auto)
-
-        if not automations:
-            raise HTTPException(status_code=404, detail="Could not find the automation(s)")
-
-        # Build prompt for fix suggestion
-        import yaml
-        automations_yaml = "\n\n".join([
-            f"# {a.get('alias', 'Unnamed')} (id: {a.get('id')})\n```yaml\n{yaml.dump(a, default_flow_style=False)}\n```"
-            for a in automations
-        ])
-
-        prompt = f"""Fix this Home Assistant automation issue.
-
-## Issue
-**Type:** {insight.get('insight_type', 'unknown')}
-**Title:** {insight.get('title', '')}
-**Description:** {insight.get('description', '')}
-
-## Automation(s)
-{automations_yaml}
-
-## Your Task
-Provide a corrected version of the automation(s) that fixes the issue.
-- Return ONLY the corrected YAML, no explanations
-- If multiple automations are involved, separate them with ---
-- Keep the original id and alias
-- Only change what's necessary to fix the issue"""
-
-        llm = AsyncClaudeClient(model=config.doctor_model_or_default)
-        fix_suggestion = await llm.generate_automation(
-            "You are a Home Assistant automation expert. Return only valid YAML.",
-            prompt,
+    if not automations:
+        raise HTTPException(
+            status_code=404, detail="Could not find the automation(s)"
         )
 
-        return {
-            "insight_id": insight_id,
-            "automation_ids": insight.get("automation_ids", []),
-            "automation_names": insight.get("automation_names", []),
-            "issue": insight.get("description", ""),
-            "fix_suggestion": fix_suggestion,
-        }
+    # Build prompt for fix suggestion
+    automation_blocks = []
+    for automation in automations:
+        alias = automation.get("alias", "Unnamed")
+        automation_id = automation.get("id")
+        automation_yaml = yaml.dump(
+            automation, default_flow_style=False, sort_keys=False
+        )
+        automation_blocks.append(
+            f"# {alias} (id: {automation_id})\n```yaml\n"
+            f"{automation_yaml}\n```"
+        )
+    automations_yaml = "\n\n".join(automation_blocks)
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get fix for insight {insight_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    prompt = (
+        "Fix this Home Assistant automation issue.\n\n"
+        "## Issue\n"
+        f"**Type:** {insight.get('insight_type', 'unknown')}\n"
+        f"**Title:** {insight.get('title', '')}\n"
+        f"**Description:** {insight.get('description', '')}\n\n"
+        "## Automation(s)\n"
+        f"{automations_yaml}\n\n"
+        "## Your Task\n"
+        "Provide a corrected version of the automation(s) that fixes the issue.\n"
+        "- Return ONLY the corrected YAML, no explanations\n"
+        "- If multiple automations are involved, separate them with ---\n"
+        "- Keep the original id and alias\n"
+        "- Only change what's necessary to fix the issue"
+    )
+
+    llm = AsyncClaudeClient(model=config.doctor_model_or_default)
+    fix_suggestion = await llm.generate_automation(
+        "You are a Home Assistant automation expert. Return only valid YAML.",
+        prompt,
+    )
+
+    return {
+        "insight_id": insight_id,
+        "automation_ids": insight.get("automation_ids", []),
+        "automation_names": insight.get("automation_names", []),
+        "issue": insight.get("description", ""),
+        "fix_suggestion": fix_suggestion,
+    }
 
 
 class ApplyFixRequest(BaseModel):
@@ -634,74 +585,81 @@ async def apply_insight_fix(insight_id: str, request: ApplyFixRequest):
 
     Takes the fixed YAML and deploys it to HA, then marks the insight as resolved.
     """
-    import yaml as yaml_lib
+    # Get the insight to know which automation(s) are affected
+    all_insights = await insights_storage.get_all()
+    insight = next(
+        (item for item in all_insights if item.get("insight_id") == insight_id),
+        None,
+    )
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found")
+
+    # Parse the YAML - may contain multiple documents separated by ---
+    yaml_content = request.yaml_content
+    # Strip markdown code blocks if present
+    yaml_content = (
+        yaml_content.replace("```yaml", "")
+        .replace("```yml", "")
+        .replace("```", "")
+        .strip()
+    )
 
     try:
-        # Get the insight to know which automation(s) are affected
-        all_insights = await insights_storage.get_all()
-        insight = next((i for i in all_insights if i.get("insight_id") == insight_id), None)
-        if not insight:
-            raise HTTPException(status_code=404, detail="Insight not found")
+        documents = list(yaml.safe_load_all(yaml_content))
+    except yaml.YAMLError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid YAML: {exc}"
+        ) from exc
 
-        # Parse the YAML - may contain multiple documents separated by ---
-        yaml_content = request.yaml_content
-        # Strip markdown code blocks if present
-        yaml_content = yaml_content.replace("```yaml", "").replace("```yml", "").replace("```", "").strip()
+    if not documents:
+        raise HTTPException(status_code=400, detail="No automation found in YAML")
 
-        try:
-            documents = list(yaml_lib.safe_load_all(yaml_content))
-        except yaml_lib.YAMLError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+    # Deploy each automation
+    deployed_ids: list[str] = []
+    errors: list[str] = []
 
-        if not documents:
-            raise HTTPException(status_code=400, detail="No automation found in YAML")
+    for doc in documents:
+        if not doc:
+            continue
 
-        # Deploy each automation
-        deployed_ids = []
-        errors = []
+        automation_id = doc.get("id")
+        if not automation_id:
+            errors.append("Automation missing 'id' field")
+            continue
 
-        for doc in documents:
-            if not doc:
-                continue
+        # Ensure the ID is in the config
+        doc["id"] = automation_id
 
-            automation_id = doc.get("id")
-            if not automation_id:
-                errors.append("Automation missing 'id' field")
-                continue
-
-            # Ensure the ID is in the config
-            doc["id"] = automation_id
-
-            result = await ha_client.create_or_update_automation(automation_id, doc)
-            if result.get("success"):
-                deployed_ids.append(automation_id)
-                logger.info(f"Applied fix to automation: {automation_id}")
-            else:
-                errors.append(f"Failed to update {automation_id}: {result.get('error', 'Unknown error')}")
-
-        if not deployed_ids:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to apply fix: {'; '.join(errors) if errors else 'No automations deployed'}"
+        result = await ha_client.create_or_update_automation(automation_id, doc)
+        if result.get("success"):
+            deployed_ids.append(automation_id)
+            logger.info("Applied fix to automation: %s", automation_id)
+        else:
+            errors.append(
+                f"Failed to update {automation_id}: "
+                f"{result.get('error', 'Unknown error')}"
             )
 
-        # Reload automations
-        reloaded = await ha_client.reload_automations()
-        if not reloaded:
-            errors.append("Automations saved but reload failed - may require manual reload")
-
-        # Mark the insight as resolved
-        await insights_storage.mark_resolved(insight_id, True)
-
-        return ApplyFixResponse(
-            success=True,
-            automation_ids=deployed_ids,
-            message=f"Fix applied to {len(deployed_ids)} automation(s)",
-            errors=errors,
+    if not deployed_ids:
+        joined_errors = "; ".join(errors) if errors else "No automations deployed"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to apply fix: {joined_errors}",
         )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to apply fix for insight {insight_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Reload automations
+    reloaded = await ha_client.reload_automations()
+    if not reloaded:
+        errors.append(
+            "Automations saved but reload failed - may require manual reload"
+        )
+
+    # Mark the insight as resolved
+    await insights_storage.mark_resolved(insight_id, True)
+
+    return ApplyFixResponse(
+        success=True,
+        automation_ids=deployed_ids,
+        message=f"Fix applied to {len(deployed_ids)} automation(s)",
+        errors=errors,
+    )

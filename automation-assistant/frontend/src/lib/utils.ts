@@ -1,5 +1,5 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -25,7 +25,7 @@ export function formatMarkdown(text: string | null | undefined): string {
     const index = codeBlocks.length
     const cleaned = String(code).replace(/^\n+|\n+$/g, '')
     codeBlocks.push(`<pre><code>${cleaned}</code></pre>`)
-    return `__CODE_BLOCK_${index}__`
+    return `__CODE_BLOCK_${String(index)}__`
   })
 
   const lines = withPlaceholders.split(/\r?\n/)
@@ -65,7 +65,7 @@ export function formatMarkdown(text: string | null | undefined): string {
       closeList()
       const level = headingMatch[1]?.length ?? 1
       const headingText = headingMatch[2] ?? ''
-      htmlParts.push(`<h${level}>${formatInline(headingText)}</h${level}>`)
+      htmlParts.push(`<h${String(level)}>${formatInline(headingText)}</h${String(level)}>`)
       continue
     }
 
@@ -112,14 +112,14 @@ export function formatMarkdown(text: string | null | undefined): string {
 
 export function formatDuration(durationMs: number): string {
   if (durationMs < 1000) {
-    return `${Math.round(durationMs)}ms`
+    return `${String(Math.round(durationMs))}ms`
   }
   if (durationMs < 60000) {
     return `${(durationMs / 1000).toFixed(1)}s`
   }
   const minutes = Math.floor(durationMs / 60000)
   const seconds = Math.round((durationMs % 60000) / 1000)
-  return `${minutes}m ${seconds}s`
+  return `${String(minutes)}m ${String(seconds)}s`
 }
 
 export function truncateText(text: string | null | undefined, maxLength: number): string {
@@ -129,7 +129,8 @@ export function truncateText(text: string | null | undefined, maxLength: number)
 }
 
 export async function copyToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard && window.isSecureContext) {
+  // Use Clipboard API when available in secure context
+  if (window.isSecureContext && 'clipboard' in navigator) {
     await navigator.clipboard.writeText(text)
     return
   }
@@ -145,7 +146,8 @@ export async function copyToClipboard(text: string): Promise<void> {
   textarea.select()
   let copied = false
   try {
-    copied = document.execCommand('copy')
+    // execCommand is deprecated but needed for non-secure contexts
+    copied = document.execCommand('copy') // eslint-disable-line @typescript-eslint/no-deprecated
   } catch {
     copied = false
   }

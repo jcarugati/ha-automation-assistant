@@ -31,8 +31,7 @@ export function useFilters(): UseFiltersReturn {
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
         filtered = filtered.filter(
-          (a) =>
-            a.alias.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)
+          (a) => a.alias.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)
         )
       }
 
@@ -62,12 +61,7 @@ export function useFilters(): UseFiltersReturn {
         if (groupBy === 'area') {
           key = auto.area_name ?? 'No Area'
         } else if (groupBy === 'state') {
-          key =
-            auto.state === 'on'
-              ? 'Enabled'
-              : auto.state === 'off'
-                ? 'Disabled'
-                : 'Unknown'
+          key = auto.state === 'on' ? 'Enabled' : auto.state === 'off' ? 'Disabled' : 'Unknown'
         } else {
           // alpha
           key = auto.alias[0]?.toUpperCase() ?? '#'

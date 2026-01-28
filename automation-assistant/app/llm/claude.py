@@ -18,6 +18,10 @@ class ClaudeClient(LLMClient):
         self.client = anthropic.Anthropic(api_key=config.claude_api_key)
         self.model = model or config.model
 
+    def get_model(self) -> str:
+        """Return the configured model name."""
+        return self.model
+
     async def generate_automation(
         self, system_prompt: str, user_prompt: str
     ) -> str:
@@ -37,9 +41,7 @@ class ClaudeClient(LLMClient):
                 model=self.model,
                 max_tokens=4096,
                 system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=[{"role": "user", "content": user_prompt}],
             )
 
             # Extract text from response
@@ -50,11 +52,8 @@ class ClaudeClient(LLMClient):
 
             return response_text
 
-        except anthropic.APIError as e:
-            logger.error(f"Claude API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error calling Claude: {e}")
+        except anthropic.APIError as exc:
+            logger.error("Claude API error: %s", exc)
             raise
 
 
@@ -64,6 +63,10 @@ class AsyncClaudeClient(LLMClient):
     def __init__(self, model: Optional[str] = None):
         self.client = anthropic.AsyncAnthropic(api_key=config.claude_api_key)
         self.model = model or config.model
+
+    def get_model(self) -> str:
+        """Return the configured model name."""
+        return self.model
 
     async def generate_automation(
         self, system_prompt: str, user_prompt: str
@@ -82,9 +85,7 @@ class AsyncClaudeClient(LLMClient):
                 model=self.model,
                 max_tokens=4096,
                 system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=[{"role": "user", "content": user_prompt}],
             )
 
             # Extract text from response
@@ -95,9 +96,6 @@ class AsyncClaudeClient(LLMClient):
 
             return response_text
 
-        except anthropic.APIError as e:
-            logger.error(f"Claude API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error calling Claude: {e}")
+        except anthropic.APIError as exc:
+            logger.error("Claude API error: %s", exc)
             raise

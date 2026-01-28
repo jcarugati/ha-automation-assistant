@@ -4,6 +4,8 @@ from typing import Any
 
 from toon_format import encode
 
+from .common import build_toon_section
+
 
 def format_entities(states: list[dict[str, Any]]) -> str:
     """Format entity states for the prompt."""
@@ -90,14 +92,9 @@ def format_devices(
     return "\n".join(lines)
 
 
-def build_toon_context(context: dict[str, Any]) -> str:
-    """Build a compact TOON-encoded context payload."""
-    states = context.get("states", [])
-    services = context.get("services", [])
-    areas = context.get("areas", [])
-    devices = context.get("devices", [])
-
-    compact_areas = [
+def _compact_areas(areas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build compact area entries for the TOON context."""
+    return [
         {
             "area_id": area.get("area_id", ""),
             "name": area.get("name", "Unknown"),
@@ -105,8 +102,12 @@ def build_toon_context(context: dict[str, Any]) -> str:
         for area in areas
     ]
 
-    area_lookup = {a.get("area_id"): a.get("name", "") for a in areas}
-    compact_devices = []
+
+def _compact_devices(
+    devices: list[dict[str, Any]], area_lookup: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Build compact device entries for the TOON context."""
+    compact_devices: list[dict[str, Any]] = []
     for device in devices[:100]:
         name = device.get("name_by_user") or device.get("name", "Unknown")
         compact_devices.append(
@@ -117,7 +118,11 @@ def build_toon_context(context: dict[str, Any]) -> str:
                 "area": area_lookup.get(device.get("area_id"), ""),
             }
         )
+    return compact_devices
 
+
+def _compact_entities(states: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build compact entity entries for the TOON context."""
     domain_entities: dict[str, list[dict[str, Any]]] = {}
     for state in states:
         entity_id = state.get("entity_id")
@@ -139,8 +144,12 @@ def build_toon_context(context: dict[str, Any]) -> str:
     compact_entities: list[dict[str, Any]] = []
     for domain in sorted(domain_entities.keys()):
         compact_entities.extend(domain_entities[domain])
+    return compact_entities
 
-    compact_services = []
+
+def _compact_services(services: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build compact service entries for the TOON context."""
+    compact_services: list[dict[str, Any]] = []
     for domain_data in services:
         domain = domain_data.get("domain", "unknown")
         domain_services = domain_data.get("services", {})
@@ -154,6 +163,21 @@ def build_toon_context(context: dict[str, Any]) -> str:
                     "description": service_info.get("description", "No description"),
                 }
             )
+    return compact_services
+
+
+def build_toon_context(context: dict[str, Any]) -> str:
+    """Build a compact TOON-encoded context payload."""
+    states = context.get("states", [])
+    services = context.get("services", [])
+    areas = context.get("areas", [])
+    devices = context.get("devices", [])
+
+    area_lookup = {a.get("area_id"): a.get("name", "") for a in areas}
+    compact_areas = _compact_areas(areas)
+    compact_devices = _compact_devices(devices, area_lookup)
+    compact_entities = _compact_entities(states)
+    compact_services = _compact_services(services)
 
     payload = {
         "areas": compact_areas,
@@ -168,81 +192,84 @@ def build_toon_context(context: dict[str, Any]) -> str:
 def build_system_prompt(context: dict[str, Any]) -> str:
     """Build the system prompt with Home Assistant context."""
     toon_context = build_toon_context(context)
+    toon_section = build_toon_section(toon_context)
 
-    return f"""You are a Home Assistant automation expert. Your task is to generate valid Home Assistant automation YAML based on user requests.
-
-## Your Capabilities
-- Create automations with triggers, conditions, and actions
-- Use the available entities, services, areas, and devices in this Home Assistant instance
-- Generate syntactically correct YAML that can be directly copied into Home Assistant
-
-## Available Context (TOON format)
-The following data is encoded in TOON (a compact JSON-like format). Decode it to access areas, devices, entities, and services.
-```toon
-{toon_context}
-```
-
-## Output Format
-Always respond with:
-1. A brief explanation of what the automation does
-2. The complete automation YAML in a code block
-3. Any notes or suggestions for the user
-
-## YAML Requirements
-- Use proper indentation (2 spaces)
-- Include an `alias` field with a descriptive name
-- Include a `description` field
-- Use appropriate trigger types (state, time, event, etc.)
-- Include conditions when relevant
-- Use the correct service calls and entity IDs from the available list
-
-## Example Automation
-```yaml
-alias: "Turn on lights at sunset"
-description: "Automatically turn on living room lights when the sun sets"
-trigger:
-  - platform: sun
-    event: sunset
-condition:
-  - condition: state
-    entity_id: binary_sensor.someone_home
-    state: "on"
-action:
-  - service: light.turn_on
-    target:
-      entity_id: light.living_room
-    data:
-      brightness_pct: 80
-mode: single
-```
-
-Remember to only use entities and services that exist in this Home Assistant instance."""
+    return (
+        "You are a Home Assistant automation expert. Your task is to generate "
+        "valid Home Assistant automation YAML based on user requests.\n\n"
+        "## Your Capabilities\n"
+        "- Create automations with triggers, conditions, and actions\n"
+        "- Use the available entities, services, areas, and devices in this "
+        "Home Assistant instance\n"
+        "- Generate syntactically correct YAML that can be directly copied "
+        "into Home Assistant\n\n"
+        f"{toon_section}"
+        "## Output Format\n"
+        "Always respond with:\n"
+        "1. A brief explanation of what the automation does\n"
+        "2. The complete automation YAML in a code block\n"
+        "3. Any notes or suggestions for the user\n\n"
+        "## YAML Requirements\n"
+        "- Use proper indentation (2 spaces)\n"
+        "- Include an `alias` field with a descriptive name\n"
+        "- Include a `description` field\n"
+        "- Use appropriate trigger types (state, time, event, etc.)\n"
+        "- Include conditions when relevant\n"
+        "- Use the correct service calls and entity IDs from the available "
+        "list\n\n"
+        "## Example Automation\n"
+        "```yaml\n"
+        "alias: \"Turn on lights at sunset\"\n"
+        "description: \"Automatically turn on living room lights when the "
+        "sun sets\"\n"
+        "trigger:\n"
+        "  - platform: sun\n"
+        "    event: sunset\n"
+        "condition:\n"
+        "  - condition: state\n"
+        "    entity_id: binary_sensor.someone_home\n"
+        "    state: \"on\"\n"
+        "action:\n"
+        "  - service: light.turn_on\n"
+        "    target:\n"
+        "      entity_id: light.living_room\n"
+        "    data:\n"
+        "      brightness_pct: 80\n"
+        "mode: single\n"
+        "```\n\n"
+        "Remember to only use entities and services that exist in this Home "
+        "Assistant instance."
+    )
 
 
 def build_user_prompt(user_request: str) -> str:
     """Build the user prompt from the request."""
-    return f"""Please create a Home Assistant automation for the following request:
-
-{user_request}
-
-Provide a complete, ready-to-use automation YAML that I can copy directly into my Home Assistant configuration."""
+    return (
+        "Please create a Home Assistant automation for the following request:\n\n"
+        f"{user_request}\n\n"
+        "Provide a complete, ready-to-use automation YAML that I can copy "
+        "directly into my Home Assistant configuration."
+    )
 
 
 def build_modify_user_prompt(existing_yaml: str, modification_request: str) -> str:
     """Build the user prompt for modifying an existing automation."""
-    return f"""I have an existing Home Assistant automation that I want to modify. Please update it according to my request while preserving its core functionality, ID, and alias (unless I specifically ask to change them).
-
-## Current Automation YAML:
-```yaml
-{existing_yaml}
-```
-
-## Modification Request:
-{modification_request}
-
-Please provide:
-1. A brief explanation of what changes you made
-2. The complete updated automation YAML in a code block (not just the changes, but the full automation)
-3. Any notes about the modifications
-
-IMPORTANT: Keep the same automation ID and preserve the general structure unless the modification specifically requires changing it."""
+    return (
+        "I have an existing Home Assistant automation that I want to modify. "
+        "Please update it according to my request while preserving its core "
+        "functionality, ID, and alias (unless I specifically ask to change "
+        "them).\n\n"
+        "## Current Automation YAML:\n"
+        "```yaml\n"
+        f"{existing_yaml}\n"
+        "```\n\n"
+        "## Modification Request:\n"
+        f"{modification_request}\n\n"
+        "Please provide:\n"
+        "1. A brief explanation of what changes you made\n"
+        "2. The complete updated automation YAML in a code block (not just "
+        "the changes, but the full automation)\n"
+        "3. Any notes about the modifications\n\n"
+        "IMPORTANT: Keep the same automation ID and preserve the general "
+        "structure unless the modification specifically requires changing it."
+    )

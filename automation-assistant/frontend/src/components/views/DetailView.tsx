@@ -51,10 +51,7 @@ export function DetailView({
   }
 
   const automation = details.automation
-  const unresolvedIssues = useMemo(
-    () => issues.filter((issue) => !issue.resolved),
-    [issues]
-  )
+  const unresolvedIssues = useMemo(() => issues.filter((issue) => !issue.resolved), [issues])
   const hasChanges = useMemo(() => yaml !== details.yaml, [yaml, details.yaml])
 
   const handleDiagnose = async () => {
@@ -107,7 +104,9 @@ export function DetailView({
         setYaml(data.yaml_content)
         setModifyPrompt('')
         setSuccess('Automation modified. Review and save changes.')
-        setTimeout(() => setSuccess(null), 5000)
+        setTimeout(() => {
+          setSuccess(null)
+        }, 5000)
       } else {
         setError(data.error ?? 'Failed to modify automation')
       }
@@ -130,7 +129,7 @@ export function DetailView({
       const issueList = selectedIssues
         .map(
           (issue, index) =>
-            `${index + 1}. ${issue.title}\n- ${issue.description}\n- Recommendation: ${issue.recommendation}`
+            `${String(index + 1)}. ${issue.title}\n- ${issue.description}\n- Recommendation: ${issue.recommendation}`
         )
         .join('\n\n')
 
@@ -142,7 +141,9 @@ export function DetailView({
       if (data.success && data.yaml_content) {
         setYaml(data.yaml_content)
         setSuccess('Fix suggestions applied. Review and save changes.')
-        setTimeout(() => setSuccess(null), 5000)
+        setTimeout(() => {
+          setSuccess(null)
+        }, 5000)
       } else {
         setError(data.error ?? 'Failed to apply fixes')
       }
@@ -181,7 +182,9 @@ export function DetailView({
       setActionMessage({ type: 'error', text: message })
     } finally {
       setSaving(false)
-      setTimeout(() => setActionMessage(null), 2500)
+      setTimeout(() => {
+        setActionMessage(null)
+      }, 2500)
     }
   }
 
@@ -193,7 +196,9 @@ export function DetailView({
     try {
       await copyToClipboard(yaml)
       setActionMessage({ type: 'success', text: 'Copied to clipboard' })
-      setTimeout(() => setActionMessage(null), 2500)
+      setTimeout(() => {
+        setActionMessage(null)
+      }, 2500)
     } catch {
       setActionMessage({ type: 'error', text: 'Copy failed' })
     }
@@ -213,9 +218,7 @@ export function DetailView({
     setSelectedIssueIds(unresolvedIssues.map((issue) => issue.insight_id))
   }
 
-  const diagnosisPreview = diagnosisResult
-    ? formatMarkdown(truncateText(diagnosisResult, 400))
-    : ''
+  const diagnosisPreview = diagnosisResult ? formatMarkdown(truncateText(diagnosisResult, 400)) : ''
 
   return (
     <div className="space-y-6">
@@ -225,8 +228,20 @@ export function DetailView({
           <h1 className="text-xl font-semibold">{automation.alias}</h1>
           <p className="text-sm text-muted-foreground">automation.{automation.id}</p>
         </div>
-        <Badge variant={automation.state === 'on' ? 'success' : automation.state === 'off' ? 'secondary' : 'warning'}>
-          {automation.state === 'on' ? 'Enabled' : automation.state === 'off' ? 'Disabled' : 'Unknown'}
+        <Badge
+          variant={
+            automation.state === 'on'
+              ? 'success'
+              : automation.state === 'off'
+                ? 'secondary'
+                : 'warning'
+          }
+        >
+          {automation.state === 'on'
+            ? 'Enabled'
+            : automation.state === 'off'
+              ? 'Disabled'
+              : 'Unknown'}
         </Badge>
       </div>
 
@@ -239,7 +254,12 @@ export function DetailView({
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Health Status
           </h2>
-          <Button variant="secondary" size="sm" onClick={handleDiagnose} disabled={diagnoseLoading}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleDiagnose()}
+            disabled={diagnoseLoading}
+          >
             {diagnoseLoading ? 'Analyzing...' : 'Diagnose'}
           </Button>
         </div>
@@ -251,7 +271,9 @@ export function DetailView({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setDiagnosisOpen((prev) => !prev)}
+                onClick={() => {
+                  setDiagnosisOpen((prev) => !prev)
+                }}
               >
                 {diagnosisOpen ? 'Collapse' : 'Expand'}
               </Button>
@@ -282,8 +304,16 @@ export function DetailView({
                   <p className="text-sm text-muted-foreground">
                     Select the issues you want to fix.
                   </p>
-                  <Button variant="secondary" size="sm" onClick={handleToggleAllIssues}>
-                    {selectedIssueIds.length === unresolvedIssues.length ? 'Clear all' : 'Select all'}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      handleToggleAllIssues()
+                    }}
+                  >
+                    {selectedIssueIds.length === unresolvedIssues.length
+                      ? 'Clear all'
+                      : 'Select all'}
                   </Button>
                 </div>
                 <div className="space-y-3">
@@ -293,7 +323,9 @@ export function DetailView({
                         type="checkbox"
                         className="mt-1 h-4 w-4"
                         checked={selectedIssueIds.includes(issue.insight_id)}
-                        onChange={() => handleToggleIssue(issue.insight_id)}
+                        onChange={() => {
+                          handleToggleIssue(issue.insight_id)
+                        }}
                       />
                       <div>
                         <p className="text-sm font-medium">{issue.title}</p>
@@ -303,7 +335,7 @@ export function DetailView({
                   ))}
                 </div>
                 <Button
-                  onClick={handleFixIssues}
+                  onClick={() => void handleFixIssues()}
                   disabled={fixLoading || selectedIssueIds.length === 0}
                 >
                   {fixLoading ? 'Fixing...' : 'Fix selected issues'}
@@ -334,11 +366,16 @@ export function DetailView({
         <div className="flex gap-3">
           <Textarea
             value={modifyPrompt}
-            onChange={(e) => setModifyPrompt(e.target.value)}
+            onChange={(e) => {
+              setModifyPrompt(e.target.value)
+            }}
             placeholder="Describe the changes you want, e.g., 'Add a 5 minute delay before turning off' or 'Only trigger when it's dark outside'"
             className="flex-1 min-h-[60px]"
           />
-          <Button onClick={handleModify} disabled={modifyLoading || !modifyPrompt.trim()}>
+          <Button
+            onClick={() => void handleModify()}
+            disabled={modifyLoading || !modifyPrompt.trim()}
+          >
             {modifyLoading ? 'Modifying...' : 'Modify'}
           </Button>
         </div>
@@ -355,7 +392,7 @@ export function DetailView({
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             YAML
           </h2>
-          <Button variant="secondary" size="sm" onClick={handleCopy}>
+          <Button variant="secondary" size="sm" onClick={() => void handleCopy()}>
             Copy
           </Button>
         </div>
@@ -366,7 +403,10 @@ export function DetailView({
           </Message>
         )}
         <div className="flex gap-3 mt-4">
-          <Button onClick={handleSave} disabled={saving || !hasChanges || !yaml.trim()}>
+          <Button
+            onClick={() => void handleSave()}
+            disabled={saving || !hasChanges || !yaml.trim()}
+          >
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
           <Button variant="destructive" onClick={onDelete}>

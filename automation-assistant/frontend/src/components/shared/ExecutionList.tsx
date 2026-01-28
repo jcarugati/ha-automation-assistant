@@ -41,7 +41,11 @@ function formatError(error: ExecutionTrace['error']): string {
   return ''
 }
 
-function formatMetaMessage(meta: TracesMeta | undefined, totalCount: number, displayedCount: number): string {
+function formatMetaMessage(
+  meta: TracesMeta | undefined,
+  totalCount: number,
+  displayedCount: number
+): string {
   if (!meta || typeof meta !== 'object') return ''
   if (meta.status === 'missing_file') {
     return `Trace history file not found at ${meta.path ?? 'unknown path'}. For local runs, set HA_CONFIG_PATH or mount /config.`
@@ -54,10 +58,10 @@ function formatMetaMessage(meta: TracesMeta | undefined, totalCount: number, dis
   }
   const count = typeof meta.count === 'number' ? meta.count : totalCount
   if (displayedCount && count > displayedCount) {
-    return `Showing ${displayedCount} of ${count} recent executions.`
+    return `Showing ${String(displayedCount)} of ${String(count)} recent executions.`
   }
   if (count) {
-    return `${count} recent execution${count === 1 ? '' : 's'}.`
+    return `${String(count)} recent execution${count === 1 ? '' : 's'}.`
   }
   return ''
 }
@@ -74,34 +78,31 @@ export function ExecutionList({ traces, tracesMeta, loading }: ExecutionListProp
     )
   }
 
-  if (!traces || traces.length === 0) {
+  if (traces.length === 0) {
     return (
-      <div className="text-center py-8 text-sm text-muted-foreground">
-        No recent executions
-      </div>
+      <div className="text-center py-8 text-sm text-muted-foreground">No recent executions</div>
     )
   }
 
-  const sorted = traces
-    .slice(0, 50)
-    .sort((a, b) => {
-      const timeA = a.timestamp_start ? new Date(a.timestamp_start).getTime() : 0
-      const timeB = b.timestamp_start ? new Date(b.timestamp_start).getTime() : 0
-      return timeB - timeA
-    })
+  const sorted = traces.slice(0, 50).sort((a, b) => {
+    const timeA = a.timestamp_start ? new Date(a.timestamp_start).getTime() : 0
+    const timeB = b.timestamp_start ? new Date(b.timestamp_start).getTime() : 0
+    return timeB - timeA
+  })
 
   const visible = sorted.slice(0, displayLimit)
   const metaMessage = formatMetaMessage(tracesMeta, traces.length, visible.length)
 
   return (
     <div className="space-y-2">
-      {metaMessage && (
-        <p className="text-xs text-muted-foreground mb-3">{metaMessage}</p>
-      )}
+      {metaMessage && <p className="text-xs text-muted-foreground mb-3">{metaMessage}</p>}
       {visible.map((trace, index) => {
         const startDate = trace.timestamp_start ? new Date(trace.timestamp_start) : null
         const finishDate = trace.timestamp_finish ? new Date(trace.timestamp_finish) : null
-        const time = startDate && !isNaN(startDate.getTime()) ? startDate.toLocaleString() : 'Time not recorded'
+        const time =
+          startDate && !isNaN(startDate.getTime())
+            ? startDate.toLocaleString()
+            : 'Time not recorded'
         const hasState = Boolean(trace.state ?? trace.script_execution)
         const isError = Boolean(trace.error) || trace.state === 'error'
         const statusLabel = isError ? 'Error' : hasState ? 'Success' : 'Status not recorded'
@@ -134,7 +135,13 @@ export function ExecutionList({ traces, tracesMeta, loading }: ExecutionListProp
                 iconClass === 'warning' && 'bg-warning/10 text-warning'
               )}
             >
-              {isError ? <X className="h-3 w-3" /> : hasState ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+              {isError ? (
+                <X className="h-3 w-3" />
+              ) : hasState ? (
+                <Check className="h-3 w-3" />
+              ) : (
+                <AlertTriangle className="h-3 w-3" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm">
@@ -144,9 +151,7 @@ export function ExecutionList({ traces, tracesMeta, loading }: ExecutionListProp
                 {formatTrigger(trace.trigger)}
               </div>
               {details.length > 0 && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  {details.join(' • ')}
-                </div>
+                <div className="text-xs text-muted-foreground mt-1">{details.join(' • ')}</div>
               )}
             </div>
           </div>
@@ -157,7 +162,9 @@ export function ExecutionList({ traces, tracesMeta, loading }: ExecutionListProp
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setDisplayLimit((prev) => Math.min(prev + 5, 50))}
+            onClick={() => {
+              setDisplayLimit((prev) => Math.min(prev + 5, 50))
+            }}
           >
             Show more ({sorted.length - displayLimit} more)
           </Button>
@@ -168,7 +175,9 @@ export function ExecutionList({ traces, tracesMeta, loading }: ExecutionListProp
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setDisplayLimit(2)}
+            onClick={() => {
+              setDisplayLimit(2)
+            }}
           >
             Show fewer
           </Button>

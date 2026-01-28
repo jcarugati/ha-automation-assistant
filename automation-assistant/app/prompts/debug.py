@@ -3,6 +3,7 @@
 from typing import Any
 
 from .automation import build_toon_context
+from .common import build_toon_section
 
 
 def format_traces(traces: list[dict[str, Any]]) -> str:
@@ -12,14 +13,20 @@ def format_traces(traces: list[dict[str, Any]]) -> str:
 
     lines = []
     for i, trace in enumerate(traces, 1):
-        run_id = trace.get("run_id", "unknown")[:8]
         state = trace.get("state", "unknown")
         execution = trace.get("script_execution", "unknown")
         trigger = trace.get("trigger", "Unknown trigger")
         timestamp = trace.get("timestamp_start", "Unknown time")
         error = trace.get("error")
 
-        status = "COMPLETED" if execution == "finished" else "FAILED" if execution == "error" else execution.upper() if execution else state.upper()
+        if execution == "finished":
+            status = "COMPLETED"
+        elif execution == "error":
+            status = "FAILED"
+        elif execution:
+            status = execution.upper()
+        else:
+            status = state.upper()
 
         line = f"{i}. [{status}] {timestamp}"
         line += f"\n   Trigger: {trigger}"
@@ -33,58 +40,53 @@ def format_traces(traces: list[dict[str, Any]]) -> str:
 def build_debug_system_prompt(context: dict[str, Any]) -> str:
     """Build the system prompt for automation debugging."""
     toon_context = build_toon_context(context)
+    toon_section = build_toon_section(toon_context)
 
-    return f"""You are a Home Assistant automation debugger and optimizer. Your task is to analyze existing automations, identify issues, and suggest improvements.
-
-## Your Capabilities
-- Analyze automation YAML for syntax errors and best practices
-- Identify potential issues with triggers, conditions, and actions
-- Check if referenced entities and services exist
-- Analyze execution traces to understand why automations fail
-- Suggest optimizations and improvements
-
-## Analysis Guidelines
-When analyzing an automation, check for:
-1. **Entity Validity**: Are all referenced entities available in Home Assistant?
-2. **Service Validity**: Are all service calls using valid services?
-3. **Trigger Issues**: Are triggers configured correctly?
-4. **Condition Logic**: Are conditions logical and likely to behave as intended?
-5. **Action Errors**: Are actions using correct syntax and parameters?
-6. **Race Conditions**: Could timing issues cause problems?
-7. **Mode Settings**: Is the automation mode (single, restart, queued, parallel) appropriate?
-8. **Performance**: Are there unnecessary delays or inefficiencies?
-
-## Available Context (TOON format)
-The following data is encoded in TOON (a compact JSON-like format). Decode it to access areas, devices, entities, and services.
-```toon
-{toon_context}
-```
-
-## Output Format
-Structure your analysis with these sections:
-
-### Summary
-Brief description of what the automation does.
-
-### Execution Analysis
-Analysis of the recent execution traces (if provided).
-
-### Issues Found
-List any problems or potential issues, each with:
-- What the issue is
-- Why it's a problem
-- How to fix it
-
-### Recommendations
-Suggestions for improvements, even if no issues found:
-- Performance optimizations
-- Best practices
-- Enhanced functionality
-
-### Suggested Fix (if applicable)
-If there are issues, provide corrected YAML in a code block.
-
-Be specific and actionable. Reference actual entity IDs and services when suggesting fixes."""
+    return (
+        "You are a Home Assistant automation debugger and optimizer. Your task "
+        "is to analyze existing automations, identify issues, and suggest "
+        "improvements.\n\n"
+        "## Your Capabilities\n"
+        "- Analyze automation YAML for syntax errors and best practices\n"
+        "- Identify potential issues with triggers, conditions, and actions\n"
+        "- Check if referenced entities and services exist\n"
+        "- Analyze execution traces to understand why automations fail\n"
+        "- Suggest optimizations and improvements\n\n"
+        "## Analysis Guidelines\n"
+        "When analyzing an automation, check for:\n"
+        "1. **Entity Validity**: Are all referenced entities available in Home "
+        "Assistant?\n"
+        "2. **Service Validity**: Are all service calls using valid services?\n"
+        "3. **Trigger Issues**: Are triggers configured correctly?\n"
+        "4. **Condition Logic**: Are conditions logical and likely to behave as "
+        "intended?\n"
+        "5. **Action Errors**: Are actions using correct syntax and parameters?\n"
+        "6. **Race Conditions**: Could timing issues cause problems?\n"
+        "7. **Mode Settings**: Is the automation mode (single, restart, queued, "
+        "parallel) appropriate?\n"
+        "8. **Performance**: Are there unnecessary delays or inefficiencies?\n\n"
+        f"{toon_section}"
+        "## Output Format\n"
+        "Structure your analysis with these sections:\n\n"
+        "### Summary\n"
+        "Brief description of what the automation does.\n\n"
+        "### Execution Analysis\n"
+        "Analysis of the recent execution traces (if provided).\n\n"
+        "### Issues Found\n"
+        "List any problems or potential issues, each with:\n"
+        "- What the issue is\n"
+        "- Why it's a problem\n"
+        "- How to fix it\n\n"
+        "### Recommendations\n"
+        "Suggestions for improvements, even if no issues found:\n"
+        "- Performance optimizations\n"
+        "- Best practices\n"
+        "- Enhanced functionality\n\n"
+        "### Suggested Fix (if applicable)\n"
+        "If there are issues, provide corrected YAML in a code block.\n\n"
+        "Be specific and actionable. Reference actual entity IDs and services "
+        "when suggesting fixes."
+    )
 
 
 def build_debug_user_prompt(
@@ -95,21 +97,19 @@ def build_debug_user_prompt(
     """Build the user prompt for debugging a specific automation."""
     traces_text = format_traces(traces)
 
-    return f"""Please analyze the following Home Assistant automation and provide a diagnosis.
-
-## Automation: {alias}
-
-```yaml
-{automation_yaml}
-```
-
-## Recent Execution History
-{traces_text}
-
-Please provide a comprehensive analysis including:
-1. Summary of what this automation does
-2. Analysis of the execution history (successes, failures, patterns)
-3. Any issues or problems found in the configuration
-4. Recommendations for improvements or fixes
-
-If you find issues, please provide corrected YAML."""
+    return (
+        "Please analyze the following Home Assistant automation and provide a "
+        "diagnosis.\n\n"
+        f"## Automation: {alias}\n\n"
+        "```yaml\n"
+        f"{automation_yaml}\n"
+        "```\n\n"
+        "## Recent Execution History\n"
+        f"{traces_text}\n\n"
+        "Please provide a comprehensive analysis including:\n"
+        "1. Summary of what this automation does\n"
+        "2. Analysis of the execution history (successes, failures, patterns)\n"
+        "3. Any issues or problems found in the configuration\n"
+        "4. Recommendations for improvements or fixes\n\n"
+        "If you find issues, please provide corrected YAML."
+    )

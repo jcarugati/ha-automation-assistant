@@ -1,53 +1,24 @@
 """Storage manager for batch diagnosis reports."""
 
-import asyncio
-import json
 import logging
-from datetime import datetime
-from pathlib import Path
 from typing import Any, Optional
+
+from .storage_base import JsonStorageBase
 
 logger = logging.getLogger(__name__)
 
 
-class DiagnosticStorage:
+class DiagnosticStorage(JsonStorageBase):
     """Stores batch diagnosis reports with retention policy."""
 
     MAX_REPORTS = 30  # Keep last 30 reports
 
     def __init__(self, storage_dir: str = "/config/automation_assistant"):
-        self.storage_dir = Path(storage_dir)
-        self.storage_file = self.storage_dir / "diagnosis_reports.json"
-        self._lock = asyncio.Lock()
-        self._ensure_storage_dir()
-
-    def _ensure_storage_dir(self) -> None:
-        """Ensure the storage directory exists."""
-        try:
-            self.storage_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning(f"Could not create storage directory: {e}")
-
-    def _load_data(self) -> dict[str, Any]:
-        """Load data from the JSON file."""
-        if not self.storage_file.exists():
-            return {"reports": []}
-        try:
-            with open(self.storage_file, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Failed to load diagnostic storage file: {e}")
-            return {"reports": []}
-
-    def _save_data(self, data: dict[str, Any]) -> None:
-        """Save data to the JSON file."""
-        try:
-            self._ensure_storage_dir()
-            with open(self.storage_file, "w") as f:
-                json.dump(data, f, indent=2, default=str)
-        except IOError as e:
-            logger.error(f"Failed to save diagnostic storage file: {e}")
-            raise
+        super().__init__(
+            storage_dir=storage_dir,
+            filename="diagnosis_reports.json",
+            default_data={"reports": []},
+        )
 
     async def save_report(self, report: dict[str, Any]) -> None:
         """Save a diagnosis report, keeping last N reports."""
@@ -64,7 +35,9 @@ class DiagnosticStorage:
 
             data["reports"] = reports
             self._save_data(data)
-            logger.info(f"Saved diagnosis report: {report.get('run_id', 'unknown')}")
+            logger.info(
+                "Saved diagnosis report: %s", report.get("run_id", "unknown")
+            )
 
     async def get_latest_report(self) -> Optional[dict[str, Any]]:
         """Get most recent report."""

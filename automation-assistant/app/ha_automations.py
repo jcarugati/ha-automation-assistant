@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from aiohttp import ClientError
 import yaml
 
 from .ha_client import ha_client
@@ -27,10 +28,12 @@ class HAAutomationReader:
     def _read_automations_file(self) -> list[dict[str, Any]]:
         """Read and parse automations.yaml."""
         if not self.automations_file.exists():
-            logger.warning(f"Automations file not found: {self.automations_file}")
+            logger.warning(
+                "Automations file not found: %s", self.automations_file
+            )
             return []
         try:
-            content = self.automations_file.read_text()
+            content = self.automations_file.read_text(encoding="utf-8")
             if not content.strip():
                 return []
             automations = yaml.safe_load(content)
@@ -39,23 +42,51 @@ class HAAutomationReader:
             if isinstance(automations, list):
                 return automations
             return []
-        except yaml.YAMLError as e:
-            logger.error(f"Failed to parse automations.yaml: {e}")
+        except (OSError, yaml.YAMLError) as exc:
+            logger.error("Failed to parse automations.yaml: %s", exc)
             return []
 
     def _read_traces_file(self) -> tuple[dict[str, Any], str]:
         """Read and parse trace.saved_traces."""
         if not self.traces_file.exists():
-            logger.warning(f"Traces file not found: {self.traces_file}")
+            logger.warning("Traces file not found: %s", self.traces_file)
             return {}, "missing_file"
         try:
-            content = self.traces_file.read_text()
+            content = self.traces_file.read_text(encoding="utf-8")
             if not content.strip():
                 return {}, "empty_file"
             return json.loads(content), "ok"
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse traces file: {e}")
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.error("Failed to parse traces file: %s", exc)
             return {}, "invalid_json"
+
+    def _extract_time_fields(
+        self, payload: dict[str, Any]
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Extract start/finish values from a timestamp payload."""
+        start = payload.get("start") or payload.get("started") or payload.get(
+            "start_time"
+        )
+        finish = (
+            payload.get("finish")
+            or payload.get("end")
+            or payload.get("finished")
+            or payload.get("end_time")
+        )
+        return start, finish
+
+    def _extract_timestamp_from_trace_data(
+        self, trace_data: dict[str, Any]
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Find timestamp values inside nested trace payloads."""
+        for key, value in trace_data.items():
+            if "timestamp" not in str(key).lower():
+                continue
+            if isinstance(value, dict):
+                start, finish = self._extract_time_fields(value)
+                if start:
+                    return start, finish
+        return None, None
 
     def _extract_timestamp(self, trace: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
         """Extract start/finish timestamps from a trace, if present."""
@@ -64,38 +95,56 @@ class HAAutomationReader:
 
         timestamp = trace.get("timestamp")
         if isinstance(timestamp, dict):
-            start = timestamp.get("start") or timestamp.get("started") or timestamp.get("start_time")
-            finish = (
-                timestamp.get("finish")
-                or timestamp.get("end")
-                or timestamp.get("finished")
-                or timestamp.get("end_time")
-            )
+            start, finish = self._extract_time_fields(timestamp)
         elif isinstance(timestamp, str):
             start = timestamp
 
-        start = start or trace.get("timestamp_start") or trace.get("start") or trace.get("start_time")
-        finish = finish or trace.get("timestamp_finish") or trace.get("finish") or trace.get("end") or trace.get("end_time")
+        start = (
+            start
+            or trace.get("timestamp_start")
+            or trace.get("start")
+            or trace.get("start_time")
+        )
+        finish = (
+            finish
+            or trace.get("timestamp_finish")
+            or trace.get("finish")
+            or trace.get("end")
+            or trace.get("end_time")
+        )
 
         if not start:
             trace_data = trace.get("trace", {})
             if isinstance(trace_data, dict):
-                for key, value in trace_data.items():
-                    if "timestamp" not in str(key).lower():
-                        continue
-                    if isinstance(value, dict):
-                        start = value.get("start") or value.get("started") or value.get("start_time")
-                        finish = (
-                            finish
-                            or value.get("finish")
-                            or value.get("end")
-                            or value.get("finished")
-                            or value.get("end_time")
-                        )
-                        if start:
-                            break
+                start, finish = self._extract_timestamp_from_trace_data(trace_data)
 
         return start, finish
+
+    def _extract_trigger_from_step(self, step: dict[str, Any]) -> Optional[Any]:
+        """Extract trigger info from a step-like payload."""
+        if step.get("trigger"):
+            return step.get("trigger")
+        if step.get("description") or step.get("platform") or step.get("entity_id"):
+            return {
+                "description": step.get("description"),
+                "platform": step.get("platform"),
+                "entity_id": step.get("entity_id"),
+            }
+        return None
+
+    def _extract_trigger_from_steps(self, steps: Any) -> Optional[Any]:
+        """Extract trigger info from steps in trace data."""
+        if isinstance(steps, list):
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                trigger = self._extract_trigger_from_step(step)
+                if trigger:
+                    return trigger
+            return None
+        if isinstance(steps, dict):
+            return self._extract_trigger_from_step(steps)
+        return None
 
     def _unwrap_trace_payload(self, trace: dict[str, Any]) -> dict[str, Any]:
         """Extract the real trace payload when stored under short_dict/extended_dict."""
@@ -124,28 +173,70 @@ class HAAutomationReader:
         for key, steps in trace_data.items():
             if "trigger" not in str(key).lower():
                 continue
-            if isinstance(steps, list):
-                for step in steps:
-                    if not isinstance(step, dict):
-                        continue
-                    if step.get("trigger"):
-                        return step.get("trigger")
-                    if step.get("description") or step.get("platform") or step.get("entity_id"):
-                        return {
-                            "description": step.get("description"),
-                            "platform": step.get("platform"),
-                            "entity_id": step.get("entity_id"),
-                        }
-            elif isinstance(steps, dict):
-                if steps.get("trigger"):
-                    return steps.get("trigger")
-                if steps.get("description") or steps.get("platform") or steps.get("entity_id"):
-                    return {
-                        "description": steps.get("description"),
-                        "platform": steps.get("platform"),
-                        "entity_id": steps.get("entity_id"),
-                    }
+            trigger = self._extract_trigger_from_steps(steps)
+            if trigger:
+                return trigger
         return None
+
+    def _extract_trace_error(self, trace: dict[str, Any]) -> Optional[Any]:
+        """Extract error info from a trace."""
+        trace_data = trace.get("trace", {})
+        error = trace.get("error")
+        if not isinstance(trace_data, dict):
+            return error
+        for _step_key, steps in trace_data.items():
+            if isinstance(steps, list):
+                for step_data in steps:
+                    if step_data.get("error"):
+                        return step_data.get("error")
+            if error:
+                return error
+        return error
+
+    def _parse_trace_entry(
+        self, trace: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Parse a trace into a compact summary and stats updates."""
+        payload = self._unwrap_trace_payload(trace)
+        source = payload if payload else trace
+        source_dict = source if isinstance(source, dict) else trace
+
+        trigger = source_dict.get("trigger") if isinstance(source_dict, dict) else None
+        if not trigger:
+            trigger = self._extract_trigger(source_dict)
+
+        state = self._extract_state(source_dict)
+        script_execution = None
+        if isinstance(source_dict, dict):
+            script_execution = source_dict.get("script_execution") or source_dict.get(
+                "script"
+            )
+
+        timestamp_start, timestamp_finish = self._extract_timestamp(source_dict)
+        error = self._extract_trace_error(trace)
+
+        parsed_trace = {
+            "run_id": self._extract_run_id(source_dict),
+            "state": state,
+            "script_execution": script_execution,
+            "trigger": trigger,
+            "timestamp_start": timestamp_start,
+            "timestamp_finish": timestamp_finish,
+            "error": error,
+        }
+
+        stats = {
+            "missing_timestamps": 1 if not timestamp_start else 0,
+            "missing_triggers": 1 if not trigger else 0,
+            "missing_states": 1 if not state and not script_execution else 0,
+            "sample_keys": sorted([str(k) for k in trace.keys()])
+            if isinstance(trace, dict)
+            else [],
+            "sample_payload_keys": sorted([str(k) for k in payload.keys()])
+            if isinstance(payload, dict)
+            else [],
+        }
+        return parsed_trace, stats
 
     def _extract_state(self, trace: dict[str, Any]) -> Optional[str]:
         """Extract execution state from a trace if present."""
@@ -163,6 +254,44 @@ class HAAutomationReader:
                 return value
         return ""
 
+    def _build_lookup_maps(
+        self,
+        entity_registry: list[dict[str, Any]],
+        areas: list[dict[str, Any]],
+        states: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Build lookup maps for area/entity/state enrichment."""
+        area_map = {area.get("area_id"): area.get("name", "") for area in areas}
+        entity_map = {
+            entity.get("entity_id"): entity
+            for entity in entity_registry
+            if entity.get("entity_id", "").startswith("automation.")
+        }
+        unique_id_map = {
+            entity.get("unique_id"): entity.get("entity_id")
+            for entity in entity_registry
+            if entity.get("entity_id", "").startswith("automation.")
+            and entity.get("unique_id")
+        }
+        state_map = {
+            state.get("entity_id"): state.get("state", "unknown")
+            for state in states
+            if state.get("entity_id", "").startswith("automation.")
+        }
+        state_id_map = {
+            state.get("attributes", {}).get("id"): state.get("entity_id")
+            for state in states
+            if state.get("entity_id", "").startswith("automation.")
+            and state.get("attributes", {}).get("id")
+        }
+        return {
+            "area_map": area_map,
+            "entity_map": entity_map,
+            "unique_id_map": unique_id_map,
+            "state_map": state_map,
+            "state_id_map": state_id_map,
+        }
+
     async def list_automations(self) -> list[dict[str, Any]]:
         """List all automations with basic info including area data and state."""
         automations = self._read_automations_file()
@@ -177,36 +306,19 @@ class HAAutomationReader:
             entity_registry = await ha_client.get_entity_registry()
             areas = await ha_client.get_areas()
             states = await ha_client.get_states()
-            logger.info(f"Enrichment data: {len(entity_registry)} entities, {len(areas)} areas, {len(states)} states")
-        except Exception as e:
-            logger.warning(f"Failed to fetch enrichment data: {e}")
+            logger.info(
+                "Enrichment data: %s entities, %s areas, %s states",
+                len(entity_registry),
+                len(areas),
+                len(states),
+            )
+        except (ClientError, RuntimeError, TimeoutError, ValueError) as exc:
+            logger.warning("Failed to fetch enrichment data: %s", exc)
             entity_registry = []
             areas = []
             states = []
 
-        # Build lookup maps
-        area_map = {a.get("area_id"): a.get("name", "") for a in areas}
-        entity_map = {
-            e.get("entity_id"): e
-            for e in entity_registry
-            if e.get("entity_id", "").startswith("automation.")
-        }
-        unique_id_map = {
-            e.get("unique_id"): e.get("entity_id")
-            for e in entity_registry
-            if e.get("entity_id", "").startswith("automation.") and e.get("unique_id")
-        }
-        state_map = {
-            s.get("entity_id"): s.get("state", "unknown")
-            for s in states
-            if s.get("entity_id", "").startswith("automation.")
-        }
-        state_id_map = {
-            s.get("attributes", {}).get("id"): s.get("entity_id")
-            for s in states
-            if s.get("entity_id", "").startswith("automation.")
-            and s.get("attributes", {}).get("id")
-        }
+        lookup = self._build_lookup_maps(entity_registry, areas, states)
 
         result = []
         for auto in automations:
@@ -214,28 +326,36 @@ class HAAutomationReader:
             # Prefer entity_id from API response or registry/state mappings
             entity_id = (
                 auto.get("_entity_id")
-                or unique_id_map.get(auto_id)
-                or state_id_map.get(auto_id)
+                or lookup["unique_id_map"].get(auto_id)
+                or lookup["state_id_map"].get(auto_id)
                 or (f"automation.{auto_id}" if auto_id else None)
             )
 
             # Get area info from entity registry
-            entity_info = entity_map.get(entity_id, {}) if entity_id else {}
+            entity_info = lookup["entity_map"].get(entity_id, {}) if entity_id else {}
             area_id = entity_info.get("area_id")
-            area_name = area_map.get(area_id) if area_id else None
+            area_name = (
+                lookup["area_map"].get(area_id) if area_id else None
+            )
 
             # Get state (on/off)
-            state = state_map.get(entity_id, "unknown") if entity_id else "unknown"
+            state = (
+                lookup["state_map"].get(entity_id, "unknown")
+                if entity_id
+                else "unknown"
+            )
 
-            result.append({
-                "id": auto_id,
-                "alias": auto.get("alias", "Unnamed Automation"),
-                "description": auto.get("description", ""),
-                "mode": auto.get("mode", "single"),
-                "area_id": area_id,
-                "area_name": area_name,
-                "state": state,
-            })
+            result.append(
+                {
+                    "id": auto_id,
+                    "alias": auto.get("alias", "Unnamed Automation"),
+                    "description": auto.get("description", ""),
+                    "mode": auto.get("mode", "single"),
+                    "area_id": area_id,
+                    "area_name": area_name,
+                    "state": state,
+                }
+            )
         return result
 
     async def get_automation(self, automation_id: str) -> Optional[dict[str, Any]]:
@@ -257,7 +377,9 @@ class HAAutomationReader:
             return yaml.dump(automation, default_flow_style=False, sort_keys=False)
         return None
 
-    async def get_traces(self, automation_id: Optional[str] = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    async def get_traces(
+        self, automation_id: Optional[str] = None
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Get execution traces, optionally filtered by automation ID."""
         traces_data, status = self._read_traces_file()
         data = traces_data.get("data", {})
@@ -270,7 +392,10 @@ class HAAutomationReader:
 
         if automation_id:
             # Try both with and without automation. prefix
-            key = f"automation.{automation_id}" if not automation_id.startswith("automation.") else automation_id
+            if automation_id.startswith("automation."):
+                key = automation_id
+            else:
+                key = f"automation.{automation_id}"
             traces = data.get(key, [])
             # Also try just the ID
             if not traces:
@@ -297,74 +422,38 @@ class HAAutomationReader:
         yaml_content = await self.get_automation_yaml(automation_id)
 
         # Parse traces into a simpler format
-        parsed_traces = []
-        missing_timestamps = 0
-        missing_triggers = 0
-        missing_states = 0
-        sample_keys: list[str] = []
-        sample_payload_keys: list[str] = []
+        parsed_traces: list[dict[str, Any]] = []
+        stats = {
+            "missing_timestamps": 0,
+            "missing_triggers": 0,
+            "missing_states": 0,
+            "sample_keys": [],
+            "sample_payload_keys": [],
+        }
 
         for trace in traces:
-            payload = self._unwrap_trace_payload(trace)
-            source = payload or trace
-
-            trigger = source.get("trigger") if isinstance(source, dict) else None
-            if not trigger:
-                trigger = self._extract_trigger(source if isinstance(source, dict) else trace)
-
-            state = self._extract_state(source if isinstance(source, dict) else trace)
-            script_execution = (
-                (source.get("script_execution") if isinstance(source, dict) else None)
-                or (source.get("script") if isinstance(source, dict) else None)
-            )
-
-            parsed_trace = {
-                "run_id": self._extract_run_id(source if isinstance(source, dict) else trace),
-                "state": state,
-                "script_execution": script_execution,
-                "trigger": trigger,
-            }
-
-            # Handle timestamp
-            timestamp_start, timestamp_finish = self._extract_timestamp(source if isinstance(source, dict) else trace)
-            parsed_trace["timestamp_start"] = timestamp_start
-            parsed_trace["timestamp_finish"] = timestamp_finish
-            if not timestamp_start:
-                missing_timestamps += 1
-
-            # Check for errors in the trace
-            trace_data = trace.get("trace", {})
-            error = trace.get("error")
-            for step, steps in trace_data.items():
-                if isinstance(steps, list):
-                    for step_data in steps:
-                        if step_data.get("error"):
-                            error = step_data.get("error")
-                            break
-                if error:
-                    break
-            parsed_trace["error"] = error
-            if not parsed_trace["trigger"]:
-                missing_triggers += 1
-            if not state and not script_execution:
-                missing_states += 1
-            if not sample_keys and isinstance(trace, dict):
-                sample_keys = sorted([str(k) for k in trace.keys()])
-            if not sample_payload_keys and isinstance(payload, dict):
-                sample_payload_keys = sorted([str(k) for k in payload.keys()])
-
+            parsed_trace, updates = self._parse_trace_entry(trace)
+            stats["missing_timestamps"] += updates["missing_timestamps"]
+            stats["missing_triggers"] += updates["missing_triggers"]
+            stats["missing_states"] += updates["missing_states"]
+            if not stats["sample_keys"] and updates["sample_keys"]:
+                stats["sample_keys"] = updates["sample_keys"]
+            if not stats["sample_payload_keys"] and updates["sample_payload_keys"]:
+                stats["sample_payload_keys"] = updates["sample_payload_keys"]
             parsed_traces.append(parsed_trace)
 
         if traces:
             logger.debug(
-                "Trace parse summary for %s: %s traces, missing timestamps=%s, missing triggers=%s, missing state=%s, sample keys=%s, sample payload keys=%s",
+                "Trace parse summary for %s: %s traces, missing timestamps=%s, "
+                "missing triggers=%s, missing state=%s, sample keys=%s, sample "
+                "payload keys=%s",
                 automation_id,
                 len(traces),
-                missing_timestamps,
-                missing_triggers,
-                missing_states,
-                sample_keys,
-                sample_payload_keys,
+                stats["missing_timestamps"],
+                stats["missing_triggers"],
+                stats["missing_states"],
+                stats["sample_keys"],
+                stats["sample_payload_keys"],
             )
 
         return {

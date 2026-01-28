@@ -1,6 +1,7 @@
 """Home Assistant API client using Supervisor API."""
 
 import asyncio
+import json
 import logging
 from typing import Any, Optional
 
@@ -48,8 +49,8 @@ class HAClient:
             async with session.get(url) as response:
                 response.raise_for_status()
                 return await response.json()
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to fetch states: {e}")
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to fetch states: %s", exc)
             return []
 
     async def get_services(self) -> dict[str, Any]:
@@ -60,8 +61,8 @@ class HAClient:
             async with session.get(url) as response:
                 response.raise_for_status()
                 return await response.json()
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to fetch services: {e}")
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to fetch services: %s", exc)
             return {}
 
     async def get_config(self) -> dict[str, Any]:
@@ -72,8 +73,8 @@ class HAClient:
             async with session.get(url) as response:
                 response.raise_for_status()
                 return await response.json()
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to fetch config: {e}")
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to fetch config: %s", exc)
             return {}
 
     async def _websocket_command(self, command_type: str) -> list[dict[str, Any]]:
@@ -88,7 +89,7 @@ class HAClient:
             ) as ws:
                 # Wait for auth_required message
                 auth_required = await asyncio.wait_for(ws.recv(), timeout=10)
-                logger.debug(f"Auth required: {auth_required}")
+                logger.debug("Auth required: %s", auth_required)
 
                 # Send auth
                 await ws.send(
@@ -97,20 +98,24 @@ class HAClient:
 
                 # Wait for auth_ok
                 auth_result = await asyncio.wait_for(ws.recv(), timeout=10)
-                logger.debug(f"Auth result: {auth_result}")
+                logger.debug("Auth result: %s", auth_result)
 
                 # Send command
                 await ws.send(f'{{"id": 1, "type": "{command_type}"}}')
 
                 # Get result
                 result = await asyncio.wait_for(ws.recv(), timeout=30)
-                import json
 
                 data = json.loads(result)
                 return data.get("result", [])
 
-        except Exception as e:
-            logger.error(f"WebSocket command {command_type} failed: {e}")
+        except (
+            asyncio.TimeoutError,
+            json.JSONDecodeError,
+            OSError,
+            websockets.exceptions.WebSocketException,
+        ) as exc:
+            logger.error("WebSocket command %s failed: %s", command_type, exc)
             return []
 
     async def get_devices(self) -> list[dict[str, Any]]:
@@ -147,13 +152,16 @@ class HAClient:
             async with session.post(url, json=automation_config) as response:
                 if response.status == 200:
                     return {"success": True}
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Failed to save automation: {response.status} - {error_text}")
-                    return {"success": False, "error": error_text}
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to save automation: {e}")
-            return {"success": False, "error": str(e)}
+                error_text = await response.text()
+                logger.error(
+                    "Failed to save automation: %s - %s",
+                    response.status,
+                    error_text,
+                )
+                return {"success": False, "error": error_text}
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to save automation: %s", exc)
+            return {"success": False, "error": str(exc)}
 
     async def reload_automations(self) -> bool:
         """Reload automations in Home Assistant.
@@ -171,11 +179,10 @@ class HAClient:
                 if response.status == 200:
                     logger.info("Automations reloaded successfully")
                     return True
-                else:
-                    logger.error(f"Failed to reload automations: {response.status}")
-                    return False
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to reload automations: {e}")
+                logger.error("Failed to reload automations: %s", response.status)
+                return False
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to reload automations: %s", exc)
             return False
 
     async def get_automation_config(self, automation_id: str) -> Optional[dict[str, Any]]:
@@ -194,13 +201,14 @@ class HAClient:
             async with session.get(url) as response:
                 if response.status == 200:
                     return await response.json()
-                elif response.status == 404:
+                if response.status == 404:
                     return None
-                else:
-                    logger.error(f"Failed to get automation config: {response.status}")
-                    return None
-        except aiohttp.ClientError as e:
-            logger.error(f"Failed to get automation config: {e}")
+                logger.error(
+                    "Failed to get automation config: %s", response.status
+                )
+                return None
+        except aiohttp.ClientError as exc:
+            logger.error("Failed to get automation config: %s", exc)
             return None
 
     async def list_automations(self) -> list[dict[str, Any]]:
@@ -213,7 +221,11 @@ class HAClient:
             List of automation config dicts with basic info (id, alias, mode, entity_id)
         """
         states = await self.get_states()
-        automation_states = [s for s in states if s.get("entity_id", "").startswith("automation.")]
+        automation_states = [
+            state
+            for state in states
+            if state.get("entity_id", "").startswith("automation.")
+        ]
 
         automations = []
         for state in automation_states:
@@ -225,14 +237,16 @@ class HAClient:
                 # Fall back to entity_id suffix if no id attribute
                 auto_id = entity_id.replace("automation.", "")
 
-            automations.append({
-                "id": auto_id,
-                "alias": attrs.get("friendly_name", "Unnamed Automation"),
-                "mode": attrs.get("mode", "single"),
-                "_entity_id": entity_id,  # Store for enrichment lookups
-            })
+            automations.append(
+                {
+                    "id": auto_id,
+                    "alias": attrs.get("friendly_name", "Unnamed Automation"),
+                    "mode": attrs.get("mode", "single"),
+                    "_entity_id": entity_id,  # Store for enrichment lookups
+                }
+            )
 
-        logger.info(f"Fetched {len(automations)} automations via API")
+        logger.info("Fetched %s automations via API", len(automations))
         return automations
 
     async def get_full_context(self) -> dict[str, Any]:
@@ -254,31 +268,36 @@ class HAClient:
 
         # Handle any exceptions
         if isinstance(states, Exception):
-            logger.error(f"Failed to get states: {states}")
+            logger.error("Failed to get states: %s", states)
             states = []
         if isinstance(services, Exception):
-            logger.error(f"Failed to get services: {services}")
+            logger.error("Failed to get services: %s", services)
             services = {}
         if isinstance(ha_config, Exception):
-            logger.error(f"Failed to get config: {ha_config}")
+            logger.error("Failed to get config: %s", ha_config)
             ha_config = {}
         if isinstance(devices, Exception):
-            logger.error(f"Failed to get devices: {devices}")
+            logger.error("Failed to get devices: %s", devices)
             devices = []
         if isinstance(areas, Exception):
-            logger.error(f"Failed to get areas: {areas}")
+            logger.error("Failed to get areas: %s", areas)
             areas = []
         if isinstance(entities, Exception):
-            logger.error(f"Failed to get entity registry: {entities}")
+            logger.error("Failed to get entity registry: %s", entities)
             entities = []
 
         # Filter out unavailable/unknown states
         unavailable_states = {"unavailable", "unknown"}
         active_states = [
-            s for s in states
-            if s.get("state", "").lower() not in unavailable_states
+            state
+            for state in states
+            if state.get("state", "").lower() not in unavailable_states
         ]
-        logger.debug(f"Filtered states: {len(states)} -> {len(active_states)} (removed unavailable/unknown)")
+        logger.debug(
+            "Filtered states: %s -> %s (removed unavailable/unknown)",
+            len(states),
+            len(active_states),
+        )
 
         # Get set of disabled entity IDs from registry
         disabled_entity_ids = {
@@ -292,14 +311,17 @@ class HAClient:
             s for s in active_states
             if s.get("entity_id") not in disabled_entity_ids
         ]
-        logger.debug(f"After removing disabled entities: {len(active_states)}")
+        logger.debug("After removing disabled entities: %s", len(active_states))
 
         # Filter out disabled devices
         active_devices = [
-            d for d in devices
-            if d.get("disabled_by") is None
+            device for device in devices if device.get("disabled_by") is None
         ]
-        logger.debug(f"Filtered devices: {len(devices)} -> {len(active_devices)} (removed disabled)")
+        logger.debug(
+            "Filtered devices: %s -> %s (removed disabled)",
+            len(devices),
+            len(active_devices),
+        )
 
         # Filter entity registry to only include enabled entities
         active_entities = [

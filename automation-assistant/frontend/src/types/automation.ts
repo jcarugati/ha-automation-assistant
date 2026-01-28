@@ -5,7 +5,7 @@ export interface Automation {
   mode?: string
   area_id?: string
   area_name?: string
-  state?: 'on' | 'off' | string
+  state?: string
 }
 
 export interface Trigger {

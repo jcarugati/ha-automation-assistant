@@ -21,6 +21,10 @@ class OpenRouterClient(LLMClient):
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1"
 
+    def get_model(self) -> str:
+        """Return the configured model name."""
+        return self.model
+
     async def generate_automation(
         self, system_prompt: str, user_prompt: str
     ) -> str:
@@ -60,9 +64,6 @@ class OpenRouterClient(LLMClient):
                     data = await response.json()
                     return data["choices"][0]["message"]["content"]
 
-        except aiohttp.ClientError as e:
-            logger.error(f"OpenRouter API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error calling OpenRouter: {e}")
+        except aiohttp.ClientError as exc:
+            logger.error("OpenRouter API error: %s", exc)
             raise

@@ -30,30 +30,23 @@ interface ScheduleModalProps {
   }) => Promise<void>
 }
 
-export function ScheduleModal({
-  open,
-  onOpenChange,
-  schedule,
-  onSave,
-}: ScheduleModalProps) {
+export function ScheduleModal({ open, onOpenChange, schedule, onSave }: ScheduleModalProps) {
   const [enabled, setEnabled] = useState(schedule?.enabled ?? true)
   const [time, setTime] = useState(schedule?.time ?? '03:00')
   const [frequency, setFrequency] = useState<ScheduleConfig['frequency']>(
     schedule?.frequency ?? 'daily'
   )
   const [dayOfWeek, setDayOfWeek] = useState(schedule?.day_of_week ?? 'mon')
-  const [dayOfMonth, setDayOfMonth] = useState(
-    String(schedule?.day_of_month ?? 1)
-  )
+  const [dayOfMonth, setDayOfMonth] = useState(String(schedule?.day_of_month ?? 1))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (schedule) {
       setEnabled(schedule.enabled)
       setTime(schedule.time)
-      setFrequency(schedule.frequency ?? 'daily')
-      setDayOfWeek(schedule.day_of_week ?? 'mon')
-      setDayOfMonth(String(schedule.day_of_month ?? 1))
+      setFrequency(schedule.frequency)
+      setDayOfWeek(schedule.day_of_week)
+      setDayOfMonth(String(schedule.day_of_month))
     }
   }, [schedule])
 
@@ -89,7 +82,9 @@ export function ScheduleModal({
               <input
                 type="checkbox"
                 checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
+                onChange={(e) => {
+                  setEnabled(e.target.checked)
+                }}
                 className="h-4 w-4"
               />
               <span className="text-sm text-muted-foreground">
@@ -99,7 +94,12 @@ export function ScheduleModal({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Frequency</label>
-            <Select value={frequency} onValueChange={(value) => setFrequency(value as ScheduleConfig['frequency'])}>
+            <Select
+              value={frequency}
+              onValueChange={(value) => {
+                setFrequency(value as ScheduleConfig['frequency'])
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Select frequency" />
               </SelectTrigger>
@@ -114,7 +114,9 @@ export function ScheduleModal({
             <label className="text-sm font-medium">Run at time (24h format)</label>
             <Input
               value={time}
-              onChange={(e) => setTime(e.target.value)}
+              onChange={(e) => {
+                setTime(e.target.value)
+              }}
               placeholder="HH:MM"
               className="w-32"
             />
@@ -143,7 +145,9 @@ export function ScheduleModal({
               <label className="text-sm font-medium">Day of month</label>
               <Input
                 value={dayOfMonth}
-                onChange={(e) => setDayOfMonth(e.target.value)}
+                onChange={(e) => {
+                  setDayOfMonth(e.target.value)
+                }}
                 placeholder="1"
                 type="number"
                 min={1}
@@ -154,10 +158,15 @@ export function ScheduleModal({
           )}
         </div>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              onOpenChange(false)
+            }}
+          >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={() => void handleSave()} disabled={saving}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>

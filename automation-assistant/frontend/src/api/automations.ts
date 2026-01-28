@@ -25,17 +25,17 @@ export async function getHAAutomation(id: string): Promise<AutomationDetails> {
 }
 
 export async function generateAutomation(request: GenerateRequest): Promise<GenerateResponse> {
-  return apiPost<GenerateResponse, GenerateRequest>('/generate', request)
+  return apiPost<GenerateResponse>('/generate', request)
 }
 
 export async function modifyAutomation(request: ModifyRequest): Promise<GenerateResponse> {
-  return apiPost<GenerateResponse, ModifyRequest>('/modify', request)
+  return apiPost<GenerateResponse>('/modify', request)
 }
 
 export async function validateYaml(request: ValidationRequest): Promise<ValidationResponse> {
-  return apiPost<ValidationResponse, ValidationRequest>('/validate', request)
+  return apiPost<ValidationResponse>('/validate', request)
 }
 
 export async function deployAutomation(request: DeployRequest): Promise<DeployResponse> {
-  return apiPost<DeployResponse, DeployRequest>('/deploy', request)
+  return apiPost<DeployResponse>('/deploy', request)
 }

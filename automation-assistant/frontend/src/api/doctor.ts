@@ -40,7 +40,7 @@ export async function applyInsightFix(
   insightId: string,
   request: ApplyFixRequest
 ): Promise<ApplyFixResponse> {
-  return apiPost<ApplyFixResponse, ApplyFixRequest>(
+  return apiPost<ApplyFixResponse>(
     `/doctor/insights/${encodeURIComponent(insightId)}/apply`,
     request
   )
@@ -48,7 +48,7 @@ export async function applyInsightFix(
 
 // Single diagnosis
 export async function diagnoseAutomation(request: DiagnoseRequest): Promise<DiagnosisResponse> {
-  return apiPost<DiagnosisResponse, DiagnoseRequest>('/doctor/diagnose', request)
+  return apiPost<DiagnosisResponse>('/doctor/diagnose', request)
 }
 
 // Batch diagnosis
@@ -86,5 +86,5 @@ export async function getSchedule(): Promise<ScheduleConfig> {
 }
 
 export async function updateSchedule(request: ScheduleUpdateRequest): Promise<ScheduleConfig> {
-  return apiPut<ScheduleConfig, ScheduleUpdateRequest>('/doctor/schedule', request)
+  return apiPut<ScheduleConfig>('/doctor/schedule', request)
 }

@@ -9,10 +9,7 @@ interface MessageProps {
 
 export function Message({ type, children, className }: MessageProps) {
   return (
-    <Alert
-      variant={type === 'error' ? 'destructive' : 'success'}
-      className={cn(className)}
-    >
+    <Alert variant={type === 'error' ? 'destructive' : 'success'} className={cn(className)}>
       <AlertDescription>{children}</AlertDescription>
     </Alert>
   )

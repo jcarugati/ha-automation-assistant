@@ -33,7 +33,7 @@ export function HealthBadge({ issues }: HealthBadgeProps) {
         </div>
         <div className="text-sm">
           {hasIssues
-            ? `${issues.length} issue${issues.length > 1 ? 's' : ''} found`
+            ? `${String(issues.length)} issue${issues.length > 1 ? 's' : ''} found`
             : 'No issues detected'}
         </div>
       </div>

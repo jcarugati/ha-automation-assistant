@@ -1,7 +1,4 @@
-const API_BASE = new URL(
-  "api",
-  `${window.location.origin}${window.location.pathname}`
-).toString()
+const API_BASE = new URL('api', `${window.location.origin}${window.location.pathname}`).toString()
 
 export class ApiError extends Error {
   constructor(
@@ -22,16 +19,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail: string | undefined
     try {
-      const data = await response.json() as { detail?: string; error?: string }
+      const data = (await response.json()) as { detail?: string; error?: string }
       detail = data.detail ?? data.error
     } catch {
       // Response body not JSON
     }
-    throw new ApiError(
-      response.status,
-      `HTTP ${response.status}`,
-      detail
-    )
+    throw new ApiError(response.status, `HTTP ${String(response.status)}`, detail)
   }
   return response.json() as Promise<T>
 }
@@ -49,36 +42,38 @@ export async function apiGet<T>(endpoint: string, options?: FetchOptions): Promi
   return handleResponse<T>(response)
 }
 
-export async function apiPost<T, B = unknown>(
+export async function apiPost<T>(
   endpoint: string,
-  body?: B,
+  body?: unknown,
   options?: FetchOptions
 ): Promise<T> {
+  const { headers: optHeaders, ...restOptions } = options ?? {}
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...(optHeaders as Record<string, string> | undefined),
     },
     body: body ? JSON.stringify(body) : undefined,
-    ...options,
+    ...restOptions,
   })
   return handleResponse<T>(response)
 }
 
-export async function apiPut<T, B = unknown>(
+export async function apiPut<T>(
   endpoint: string,
-  body?: B,
+  body?: unknown,
   options?: FetchOptions
 ): Promise<T> {
+  const { headers: optHeaders, ...restOptions } = options ?? {}
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...(optHeaders as Record<string, string> | undefined),
     },
     body: body ? JSON.stringify(body) : undefined,
-    ...options,
+    ...restOptions,
   })
   return handleResponse<T>(response)
 }

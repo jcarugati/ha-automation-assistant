@@ -19,4 +19,8 @@ class LLMClient(ABC):
         Returns:
             The generated automation YAML with explanation.
         """
-        pass
+        raise NotImplementedError
+
+    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        """Backward-compatible wrapper for generating automations."""
+        return await self.generate_automation(system_prompt, user_prompt)

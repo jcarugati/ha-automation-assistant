@@ -63,8 +63,7 @@ export function Sidebar({
       <div className="p-4 border-b border-border">
         <h1 className="text-lg font-semibold">Automation Assistant</h1>
         <p className="text-xs text-muted-foreground">
-          Home Assistant Automations{' '}
-          {version && <span className="opacity-60">v{version}</span>}
+          Home Assistant Automations {version && <span className="opacity-60">v{version}</span>}
         </p>
       </div>
 
@@ -75,7 +74,12 @@ export function Sidebar({
 
       {/* Group By Select */}
       <div className="px-4 pb-2">
-        <Select value={groupBy} onValueChange={(v) => onGroupByChange(v as GroupByType)}>
+        <Select
+          value={groupBy}
+          onValueChange={(v) => {
+            onGroupByChange(v as GroupByType)
+          }}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Group by..." />
           </SelectTrigger>
@@ -103,7 +107,9 @@ export function Sidebar({
           return (
             <button
               key={item.view}
-              onClick={() => onViewChange(item.view)}
+              onClick={() => {
+                onViewChange(item.view)
+              }}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                 isActive

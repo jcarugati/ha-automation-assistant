@@ -3,12 +3,14 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+from aiohttp import ClientError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from .batch_doctor import batch_diagnosis_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,26 +49,28 @@ class DiagnosisScheduler:
         config_path = Path(self.CONFIG_FILE)
         if config_path.exists():
             try:
-                with open(config_path, "r") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        config = dict(self.DEFAULT_CONFIG)
-                        config.update(data)
-                        if config.get("frequency") not in self.VALID_FREQUENCIES:
-                            config["frequency"] = self.DEFAULT_CONFIG["frequency"]
-                        if config.get("day_of_week") not in self.VALID_WEEKDAYS:
-                            config["day_of_week"] = self.DEFAULT_CONFIG["day_of_week"]
-                        try:
-                            day_of_month = int(config.get("day_of_month", 1))
-                        except (TypeError, ValueError):
-                            day_of_month = self.DEFAULT_CONFIG["day_of_month"]
-                        if not 1 <= day_of_month <= 31:
-                            day_of_month = self.DEFAULT_CONFIG["day_of_month"]
-                        config["day_of_month"] = day_of_month
-                        return config
-                    logger.error("Scheduler config is not a dictionary, using defaults")
-            except (json.JSONDecodeError, IOError) as e:
-                logger.error(f"Failed to load scheduler config: {e}")
+                with open(config_path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+                if isinstance(data, dict):
+                    config = dict(self.DEFAULT_CONFIG)
+                    config.update(data)
+                    if config.get("frequency") not in self.VALID_FREQUENCIES:
+                        config["frequency"] = self.DEFAULT_CONFIG["frequency"]
+                    if config.get("day_of_week") not in self.VALID_WEEKDAYS:
+                        config["day_of_week"] = self.DEFAULT_CONFIG["day_of_week"]
+                    try:
+                        day_of_month = int(config.get("day_of_month", 1))
+                    except (TypeError, ValueError):
+                        day_of_month = self.DEFAULT_CONFIG["day_of_month"]
+                    if not 1 <= day_of_month <= 31:
+                        day_of_month = self.DEFAULT_CONFIG["day_of_month"]
+                    config["day_of_month"] = day_of_month
+                    return config
+                logger.error(
+                    "Scheduler config is not a dictionary, using defaults"
+                )
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.error("Failed to load scheduler config: %s", exc)
         return dict(self.DEFAULT_CONFIG)
 
     def _save_config(self) -> None:
@@ -74,10 +78,10 @@ class DiagnosisScheduler:
         config_path = Path(self.CONFIG_FILE)
         try:
             config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(config_path, "w") as f:
-                json.dump(self._config, f, indent=2)
-        except IOError as e:
-            logger.error(f"Failed to save scheduler config: {e}")
+            with open(config_path, "w", encoding="utf-8") as handle:
+                json.dump(self._config, handle, indent=2)
+        except OSError as exc:
+            logger.error("Failed to save scheduler config: %s", exc)
 
     def start(self) -> None:
         """Start the scheduler with configured job."""
@@ -98,7 +102,9 @@ class DiagnosisScheduler:
         try:
             hour, minute = map(int, time_str.split(":"))
         except ValueError:
-            logger.error(f"Invalid time format: {time_str}, using default 03:00")
+            logger.error(
+                "Invalid time format: %s, using default 03:00", time_str
+            )
             hour, minute = 3, 0
 
         # Remove existing job if any
@@ -107,13 +113,15 @@ class DiagnosisScheduler:
 
         frequency = str(self._config.get("frequency", "daily")).lower()
         if frequency not in self.VALID_FREQUENCIES:
-            logger.error(f"Invalid frequency: {frequency}, defaulting to daily")
+            logger.error("Invalid frequency: %s, defaulting to daily", frequency)
             frequency = "daily"
 
         if frequency == "weekly":
             day_of_week = str(self._config.get("day_of_week", "mon")).lower()
             if day_of_week not in self.VALID_WEEKDAYS:
-                logger.error(f"Invalid day_of_week: {day_of_week}, defaulting to mon")
+                logger.error(
+                    "Invalid day_of_week: %s, defaulting to mon", day_of_week
+                )
                 day_of_week = "mon"
             trigger = CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute)
             schedule_label = f"weekly on {day_of_week}"
@@ -122,11 +130,14 @@ class DiagnosisScheduler:
             try:
                 day_of_month_int = int(day_of_month)
             except (TypeError, ValueError):
-                logger.error(f"Invalid day_of_month: {day_of_month}, defaulting to 1")
+                logger.error(
+                    "Invalid day_of_month: %s, defaulting to 1", day_of_month
+                )
                 day_of_month_int = 1
             if not 1 <= day_of_month_int <= 31:
                 logger.error(
-                    f"Invalid day_of_month: {day_of_month_int}, defaulting to 1"
+                    "Invalid day_of_month: %s, defaulting to 1",
+                    day_of_month_int,
                 )
                 day_of_month_int = 1
             trigger = CronTrigger(day=day_of_month_int, hour=hour, minute=minute)
@@ -142,24 +153,25 @@ class DiagnosisScheduler:
             name="Scheduled Automation Diagnosis",
             replace_existing=True,
         )
-        logger.info(f"Scheduled {schedule_label} diagnosis at {time_str}")
+        logger.info(
+            "Scheduled %s diagnosis at %s", schedule_label, time_str
+        )
 
     async def _run_scheduled_diagnosis(self) -> None:
         """Called by scheduler to run diagnosis."""
         logger.info("Starting scheduled diagnosis run")
         try:
-            # Import here to avoid circular imports
-            from .batch_doctor import batch_diagnosis_service
-
             result = await batch_diagnosis_service.run_batch_diagnosis(scheduled=True)
             logger.info(
-                f"Scheduled diagnosis complete: {result.run_id} - "
-                f"{result.automations_analyzed} automations, "
-                f"{result.automations_with_errors} with errors, "
-                f"{result.conflicts_found} conflicts"
+                "Scheduled diagnosis complete: %s - %s automations, %s with "
+                "errors, %s conflicts",
+                result.run_id,
+                result.automations_analyzed,
+                result.automations_with_errors,
+                result.conflicts_found,
             )
-        except Exception as e:
-            logger.error(f"Scheduled diagnosis failed: {e}")
+        except (ClientError, RuntimeError, TimeoutError, ValueError) as exc:
+            logger.error("Scheduled diagnosis failed: %s", exc)
 
     def stop(self) -> None:
         """Stop the scheduler."""
@@ -184,57 +196,36 @@ class DiagnosisScheduler:
             "next_run": next_run,
         }
 
-    def update_schedule(
-        self,
-        time: Optional[str] = None,
-        enabled: Optional[bool] = None,
-        frequency: Optional[str] = None,
-        day_of_week: Optional[str] = None,
-        day_of_month: Optional[int] = None,
-    ) -> dict[str, Any]:
+    def update_schedule(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update schedule configuration.
 
         Args:
-            time: New time in HH:MM format
-            enabled: Whether scheduling is enabled
-            frequency: daily, weekly, or monthly
-            day_of_week: Day of week for weekly schedule (mon-sun)
-            day_of_month: Day of month for monthly schedule (1-31)
+            updates: Dictionary of schedule fields to update.
 
         Returns:
             Updated configuration
         """
+        time = updates.get("time")
+        enabled = updates.get("enabled")
+        frequency = updates.get("frequency")
+        day_of_week = updates.get("day_of_week")
+        day_of_month = updates.get("day_of_month")
+
         if time is not None:
-            # Validate time format
-            try:
-                hour, minute = map(int, time.split(":"))
-                if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                    raise ValueError("Invalid time range")
-                self._config["time"] = time
-            except ValueError as e:
-                raise ValueError(f"Invalid time format. Use HH:MM (24-hour): {e}")
+            self._config["time"] = self._validate_time(time)
 
         if enabled is not None:
             self._config["enabled"] = enabled
 
         if frequency is not None:
-            normalized_frequency = frequency.strip().lower()
-            if normalized_frequency not in self.VALID_FREQUENCIES:
-                raise ValueError("Invalid frequency. Use daily, weekly, or monthly.")
-            self._config["frequency"] = normalized_frequency
+            self._config["frequency"] = self._validate_frequency(frequency)
 
         if day_of_week is not None:
             normalized_day = self._normalize_day_of_week(day_of_week)
             self._config["day_of_week"] = normalized_day
 
         if day_of_month is not None:
-            try:
-                day_of_month_int = int(day_of_month)
-            except (TypeError, ValueError) as e:
-                raise ValueError(f"Invalid day of month: {e}")
-            if not 1 <= day_of_month_int <= 31:
-                raise ValueError("Day of month must be between 1 and 31.")
-            self._config["day_of_month"] = day_of_month_int
+            self._config["day_of_month"] = self._validate_day_of_month(day_of_month)
 
         self._save_config()
 
@@ -271,6 +262,35 @@ class DiagnosisScheduler:
             raise ValueError(f"Invalid day of week: {part}")
 
         return ",".join(normalized)
+
+    def _validate_time(self, time_value: str) -> str:
+        """Validate and return a time string in HH:MM format."""
+        try:
+            hour, minute = map(int, time_value.split(":"))
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError("Invalid time range")
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid time format. Use HH:MM (24-hour): {exc}"
+            ) from exc
+        return time_value
+
+    def _validate_frequency(self, frequency: str) -> str:
+        """Validate and return a normalized frequency value."""
+        normalized = frequency.strip().lower()
+        if normalized not in self.VALID_FREQUENCIES:
+            raise ValueError("Invalid frequency. Use daily, weekly, or monthly.")
+        return normalized
+
+    def _validate_day_of_month(self, day_of_month: int | str) -> int:
+        """Validate and return a day-of-month value."""
+        try:
+            day_of_month_int = int(day_of_month)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid day of month: {exc}") from exc
+        if not 1 <= day_of_month_int <= 31:
+            raise ValueError("Day of month must be between 1 and 31.")
+        return day_of_month_int
 
     def trigger_now(self) -> None:
         """Trigger a diagnosis run immediately (outside of schedule)."""

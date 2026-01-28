@@ -41,14 +41,17 @@ export function useInsights(): UseInsightsReturn {
     }
   }, [])
 
-  const resolveInsight = useCallback(async (insightId: string, resolved: boolean) => {
-    try {
-      await apiResolveInsight(insightId, resolved)
-      await refresh()
-    } catch (e) {
-      console.error('Failed to resolve insight:', e)
-    }
-  }, [refresh])
+  const resolveInsight = useCallback(
+    async (insightId: string, resolved: boolean) => {
+      try {
+        await apiResolveInsight(insightId, resolved)
+        await refresh()
+      } catch (e) {
+        console.error('Failed to resolve insight:', e)
+      }
+    },
+    [refresh]
+  )
 
   const automationIdsWithIssues = (() => {
     const ids = new Set<string>()
@@ -63,20 +66,24 @@ export function useInsights(): UseInsightsReturn {
     return ids
   })()
 
-  const getIssuesForAutomation = useCallback((id: string): Insight[] => {
-    const allInsights = [...insights.single_automation, ...insights.multi_automation]
-    return allInsights.filter(
-      (i) => i.automation_ids.includes(id) && !i.resolved
-    )
-  }, [insights])
+  const getIssuesForAutomation = useCallback(
+    (id: string): Insight[] => {
+      const allInsights = [...insights.single_automation, ...insights.multi_automation]
+      return allInsights.filter((i) => i.automation_ids.includes(id) && !i.resolved)
+    },
+    [insights]
+  )
 
-  const getSeverityForAutomation = useCallback((id: string): InsightSeverity | null => {
-    const issues = getIssuesForAutomation(id)
-    if (issues.length === 0) return null
-    if (issues.some((i) => i.severity === 'critical')) return 'critical'
-    if (issues.some((i) => i.severity === 'warning')) return 'warning'
-    return 'info'
-  }, [getIssuesForAutomation])
+  const getSeverityForAutomation = useCallback(
+    (id: string): InsightSeverity | null => {
+      const issues = getIssuesForAutomation(id)
+      if (issues.length === 0) return null
+      if (issues.some((i) => i.severity === 'critical')) return 'critical'
+      if (issues.some((i) => i.severity === 'warning')) return 'warning'
+      return 'info'
+    },
+    [getIssuesForAutomation]
+  )
 
   useEffect(() => {
     void refresh()

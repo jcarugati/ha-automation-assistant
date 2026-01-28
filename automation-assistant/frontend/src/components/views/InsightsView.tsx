@@ -49,18 +49,14 @@ export function InsightsView({
   }, [])
 
   const filtered =
-    severityFilter === 'all'
-      ? insights
-      : insights.filter((i) => i.severity === severityFilter)
+    severityFilter === 'all' ? insights : insights.filter((i) => i.severity === severityFilter)
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Insights Dashboard</h2>
         <div className="flex items-center gap-3">
-          {lastRunInfo && (
-            <span className="text-sm text-muted-foreground">{lastRunInfo}</span>
-          )}
+          {lastRunInfo && <span className="text-sm text-muted-foreground">{lastRunInfo}</span>}
           <Button onClick={onRunDiagnosis} disabled={diagnosisRunning}>
             {diagnosisRunning ? 'Running...' : 'Run Full Diagnosis'}
           </Button>
@@ -79,7 +75,9 @@ export function InsightsView({
         {severityFilters.map((f) => (
           <button
             key={f.value}
-            onClick={() => setSeverityFilter(f.value)}
+            onClick={() => {
+              setSeverityFilter(f.value)
+            }}
             className={cn(
               'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
               severityFilter === f.value
@@ -149,7 +147,9 @@ export function InsightsView({
                         key={id}
                         variant="secondary"
                         size="sm"
-                        onClick={() => onViewAutomation(id)}
+                        onClick={() => {
+                          onViewAutomation(id)
+                        }}
                       >
                         View
                       </Button>
@@ -157,14 +157,18 @@ export function InsightsView({
                   )}
                   <Button
                     size="sm"
-                    onClick={() => onGetFix(insight.insight_id)}
+                    onClick={() => {
+                      onGetFix(insight.insight_id)
+                    }}
                   >
                     Get AI Fix
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => onResolveInsight(insight.insight_id, !insight.resolved)}
+                    onClick={() => {
+                      onResolveInsight(insight.insight_id, !insight.resolved)
+                    }}
                   >
                     {insight.resolved ? 'Unresolve' : 'Mark Resolved'}
                   </Button>

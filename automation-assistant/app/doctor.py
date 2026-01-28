@@ -3,9 +3,11 @@
 import logging
 from typing import Any
 
+from aiohttp import ClientError
+
+from .config import config
 from .ha_automations import ha_automation_reader
 from .ha_client import ha_client
-from .config import config
 from .llm.claude import AsyncClaudeClient
 from .models import DiagnosisResponse
 from .prompts import build_debug_system_prompt, build_debug_user_prompt
@@ -55,8 +57,10 @@ class AutomationDoctor:
             system_prompt = build_debug_system_prompt(context)
             user_prompt = build_debug_user_prompt(yaml_content, traces, alias)
 
-            logger.debug(f"Diagnosing automation: {alias} ({automation_id})")
-            logger.debug(f"System prompt length: {len(system_prompt)}")
+            logger.debug(
+                "Diagnosing automation: %s (%s)", alias, automation_id
+            )
+            logger.debug("System prompt length: %s", len(system_prompt))
 
             # Call LLM for analysis
             analysis = await self.llm_client.generate_automation(
@@ -73,8 +77,8 @@ class AutomationDoctor:
                 error=None,
             )
 
-        except Exception as e:
-            logger.error(f"Failed to diagnose automation: {e}")
+        except (ClientError, RuntimeError, TimeoutError, ValueError) as exc:
+            logger.error("Failed to diagnose automation: %s", exc)
             return DiagnosisResponse(
                 automation_id=automation_id,
                 automation_alias="Unknown",
@@ -82,7 +86,7 @@ class AutomationDoctor:
                 traces_summary=[],
                 analysis="",
                 success=False,
-                error=str(e),
+                error=str(exc),
             )
 
     async def list_automations(self) -> list[dict[str, Any]]:

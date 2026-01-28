@@ -12,12 +12,15 @@ export function YamlEditor({ value, onChange, readOnly, className }: YamlEditorP
   return (
     <Textarea
       value={value}
-      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      onChange={
+        onChange
+          ? (e) => {
+              onChange(e.target.value)
+            }
+          : undefined
+      }
       readOnly={readOnly}
-      className={cn(
-        'yaml-editor min-h-[300px] bg-background font-mono text-sm',
-        className
-      )}
+      className={cn('yaml-editor min-h-[300px] bg-background font-mono text-sm', className)}
     />
   )
 }

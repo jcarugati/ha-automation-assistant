@@ -5,6 +5,7 @@ import re
 from typing import Any, Optional
 
 import yaml
+from aiohttp import ClientError
 
 from .ha_client import ha_client
 from .llm.claude import AsyncClaudeClient
@@ -87,8 +88,8 @@ class AutomationGenerator:
             system_prompt = build_system_prompt(context)
             user_prompt = build_user_prompt(user_request)
 
-            logger.debug(f"System prompt length: {len(system_prompt)}")
-            logger.debug(f"User prompt: {user_prompt}")
+            logger.debug("System prompt length: %s", len(system_prompt))
+            logger.debug("User prompt: %s", user_prompt)
 
             # Call LLM
             response = await self.llm_client.generate_automation(
@@ -105,16 +106,18 @@ class AutomationGenerator:
                 error=None,
             )
 
-        except Exception as e:
-            logger.error(f"Failed to generate automation: {e}")
+        except (ClientError, RuntimeError, TimeoutError, ValueError) as exc:
+            logger.error("Failed to generate automation: %s", exc)
             return AutomationResponse(
                 success=False,
                 response="",
                 yaml_content=None,
-                error=str(e),
+                error=str(exc),
             )
 
-    async def modify(self, existing_yaml: str, modification_request: str) -> AutomationResponse:
+    async def modify(
+        self, existing_yaml: str, modification_request: str
+    ) -> AutomationResponse:
         """Modify an existing automation based on a natural language request.
 
         Args:
@@ -132,8 +135,8 @@ class AutomationGenerator:
             system_prompt = build_system_prompt(context)
             user_prompt = build_modify_user_prompt(existing_yaml, modification_request)
 
-            logger.debug(f"System prompt length: {len(system_prompt)}")
-            logger.debug(f"Modification request: {modification_request}")
+            logger.debug("System prompt length: %s", len(system_prompt))
+            logger.debug("Modification request: %s", modification_request)
 
             # Call LLM
             response = await self.llm_client.generate_automation(
@@ -150,13 +153,13 @@ class AutomationGenerator:
                 error=None,
             )
 
-        except Exception as e:
-            logger.error(f"Failed to modify automation: {e}")
+        except (ClientError, RuntimeError, TimeoutError, ValueError) as exc:
+            logger.error("Failed to modify automation: %s", exc)
             return AutomationResponse(
                 success=False,
                 response="",
                 yaml_content=None,
-                error=str(e),
+                error=str(exc),
             )
 
     async def get_context_summary(self) -> dict[str, Any]:
@@ -171,9 +174,7 @@ class AutomationGenerator:
                 domains.add(entity_id.split(".")[0])
 
         services = context.get("services", [])
-        service_count = sum(
-            len(s.get("services", {})) for s in services
-        )
+        service_count = sum(len(s.get("services", {})) for s in services)
 
         return {
             "entity_count": len(states),

@@ -78,7 +78,9 @@ export function CreateView({ onDeployClick }: CreateViewProps) {
     try {
       await copyToClipboard(result.yaml)
       setActionMessage({ type: 'success', text: 'Copied to clipboard' })
-      setTimeout(() => setActionMessage(null), 2500)
+      setTimeout(() => {
+        setActionMessage(null)
+      }, 2500)
     } catch {
       setActionMessage({ type: 'error', text: 'Copy failed' })
     }
@@ -105,11 +107,13 @@ export function CreateView({ onDeployClick }: CreateViewProps) {
             </label>
             <Textarea
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value)
+              }}
               placeholder="Example: Turn on the living room lights when motion is detected after sunset and turn them off after 5 minutes of no motion"
               className="min-h-[120px]"
             />
-            <Button onClick={handleGenerate} disabled={loading || !prompt.trim()}>
+            <Button onClick={() => void handleGenerate()} disabled={loading || !prompt.trim()}>
               Generate Automation
             </Button>
           </div>
@@ -143,10 +147,10 @@ export function CreateView({ onDeployClick }: CreateViewProps) {
                   Generated YAML
                 </h3>
                 <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" onClick={handleValidate}>
+                  <Button variant="secondary" size="sm" onClick={() => void handleValidate()}>
                     Validate
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={handleCopy}>
+                  <Button variant="secondary" size="sm" onClick={() => void handleCopy()}>
                     Copy
                   </Button>
                   <Button size="sm" onClick={handleDeploy}>

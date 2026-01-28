@@ -25,11 +25,15 @@ export DOCTOR_MODEL
 export LOG_LEVEL
 export HA_CONFIG_PATH
 
-.PHONY: deps dev dev-backend dev-frontend build install lint typecheck clean preview
+.PHONY: deps deps-dev dev dev-backend dev-frontend build install lint lint-fix lint-ruff lint-pylint lint-flake8 lint-python typecheck format format-check clean preview
 
 # Install Python dependencies
 deps:
 	cd $(APP_DIR) && $(PYTHON) -m pip install -r requirements.txt
+
+# Install Python dev dependencies
+deps-dev:
+	cd $(APP_DIR) && $(PYTHON) -m pip install -r requirements-dev.txt
 
 # Install frontend dependencies
 install:
@@ -54,6 +58,33 @@ build:
 # Run ESLint on frontend
 lint:
 	cd $(FRONTEND_DIR) && npm run lint
+
+# Run ESLint on frontend with auto-fix
+lint-fix:
+	cd $(FRONTEND_DIR) && npm run lint:fix
+
+# Format frontend code with Prettier
+format:
+	cd $(FRONTEND_DIR) && npm run format
+
+# Check frontend code formatting
+format-check:
+	cd $(FRONTEND_DIR) && npm run format:check
+
+# Run Ruff on backend
+lint-ruff: deps-dev
+	cd $(APP_DIR) && $(PYTHON) -m ruff check app
+
+# Run Pylint on backend
+lint-pylint: deps-dev
+	cd $(APP_DIR) && PYLINTHOME=/tmp/pylint $(PYTHON) -m pylint app
+
+# Run Flake8 on backend
+lint-flake8: deps-dev
+	cd $(APP_DIR) && $(PYTHON) -m flake8 --max-line-length 100 app
+
+# Run all backend linters
+lint-python: lint-ruff lint-pylint lint-flake8
 
 # Type check frontend
 typecheck:

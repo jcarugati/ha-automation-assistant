@@ -14,7 +14,9 @@ export function SearchInput({ value, onChange }: SearchInputProps) {
         type="text"
         placeholder="Search automations..."
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          onChange(e.target.value)
+        }}
         className="pl-9 bg-background"
       />
     </div>

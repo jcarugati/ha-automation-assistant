@@ -81,17 +81,23 @@ export default function App() {
   )
 
   // View handlers
-  const handleViewChange = useCallback((view: ViewType) => {
-    setCurrentView(view)
-    if (view !== 'detail') {
-      clearCurrent()
-    }
-  }, [clearCurrent])
+  const handleViewChange = useCallback(
+    (view: ViewType) => {
+      setCurrentView(view)
+      if (view !== 'detail') {
+        clearCurrent()
+      }
+    },
+    [clearCurrent]
+  )
 
-  const handleAutomationSelect = useCallback(async (id: string) => {
-    await selectAutomation(id)
-    setCurrentView('detail')
-  }, [selectAutomation])
+  const handleAutomationSelect = useCallback(
+    async (id: string) => {
+      await selectAutomation(id)
+      setCurrentView('detail')
+    },
+    [selectAutomation]
+  )
 
   // Diagnosis
   const handleRunDiagnosis = useCallback(async () => {
@@ -115,15 +121,18 @@ export default function App() {
   }, [])
 
   // Schedule modal
-  const handleSaveSchedule = useCallback(async (request: {
-    enabled: boolean
-    time: string
-    frequency: 'daily' | 'weekly' | 'monthly'
-    day_of_week: string
-    day_of_month: number
-  }) => {
-    await updateSchedule(request)
-  }, [updateSchedule])
+  const handleSaveSchedule = useCallback(
+    async (request: {
+      enabled: boolean
+      time: string
+      frequency: 'daily' | 'weekly' | 'monthly'
+      day_of_week: string
+      day_of_month: number
+    }) => {
+      await updateSchedule(request)
+    },
+    [updateSchedule]
+  )
 
   // Delete handler
   const handleDelete = useCallback(() => {
@@ -156,7 +165,7 @@ export default function App() {
           automations={automations}
           automationsLoading={automationsLoading}
           selectedAutomationId={currentAutomation?.automation.id ?? null}
-          onAutomationSelect={handleAutomationSelect}
+          onAutomationSelect={(id) => void handleAutomationSelect(id)}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           filter={filter}
@@ -185,17 +194,21 @@ export default function App() {
               automations={automations}
               automationIdsWithIssues={automationIdsWithIssues}
               schedule={schedule}
-              onCreateClick={() => handleViewChange('create')}
-              onInsightsClick={() => handleViewChange('insights')}
-              onRunDiagnosis={handleRunDiagnosis}
-              onScheduleClick={() => setScheduleModalOpen(true)}
+              onCreateClick={() => {
+                handleViewChange('create')
+              }}
+              onInsightsClick={() => {
+                handleViewChange('insights')
+              }}
+              onRunDiagnosis={() => void handleRunDiagnosis()}
+              onScheduleClick={() => {
+                setScheduleModalOpen(true)
+              }}
               diagnosisRunning={diagnosisRunning}
             />
           )}
 
-          {currentView === 'create' && (
-            <CreateView onDeployClick={handleOpenDeployModal} />
-          )}
+          {currentView === 'create' && <CreateView onDeployClick={handleOpenDeployModal} />}
 
           {currentView === 'detail' && currentAutomation && (
             <DetailView
@@ -204,22 +217,24 @@ export default function App() {
               issues={currentIssues}
               onRefresh={async () => {
                 await refreshAutomations()
-                if (currentAutomation) {
-                  await selectAutomation(currentAutomation.automation.id)
-                }
+                await selectAutomation(currentAutomation.automation.id)
               }}
-              onDelete={() => setDeleteModalOpen(true)}
+              onDelete={() => {
+                setDeleteModalOpen(true)
+              }}
             />
           )}
 
           {currentView === 'insights' && (
             <InsightsView
               insights={allInsights}
-              onRunDiagnosis={handleRunDiagnosis}
+              onRunDiagnosis={() => void handleRunDiagnosis()}
               diagnosisRunning={diagnosisRunning}
-              onViewAutomation={handleAutomationSelect}
-              onResolveInsight={resolveInsight}
-              onGetFix={handleGetFix}
+              onViewAutomation={(id) => void handleAutomationSelect(id)}
+              onResolveInsight={(insightId, resolved) => void resolveInsight(insightId, resolved)}
+              onGetFix={(insightId) => {
+                handleGetFix(insightId)
+              }}
             />
           )}
         </MainContent>
@@ -231,11 +246,15 @@ export default function App() {
           onSuccess={(message) => {
             setGlobalSuccess(message)
             void refreshAutomations()
-            setTimeout(() => setGlobalSuccess(null), 5000)
+            setTimeout(() => {
+              setGlobalSuccess(null)
+            }, 5000)
           }}
           onError={(message) => {
             setGlobalError(message)
-            setTimeout(() => setGlobalError(null), 5000)
+            setTimeout(() => {
+              setGlobalError(null)
+            }, 5000)
           }}
         />
 

@@ -18,7 +18,9 @@ export function FilterButtons({ filter, onFilterChange }: FilterButtonsProps) {
       {filters.map((f) => (
         <button
           key={f.value}
-          onClick={() => onFilterChange(f.value)}
+          onClick={() => {
+            onFilterChange(f.value)
+          }}
           className={cn(
             'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
             filter === f.value

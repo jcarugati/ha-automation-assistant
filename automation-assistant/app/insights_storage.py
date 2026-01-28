@@ -1,52 +1,24 @@
 """Storage manager for deduplicated insights from diagnosis runs."""
 
-import asyncio
 import hashlib
-import json
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Optional
+
+from .storage_base import JsonStorageBase
 
 logger = logging.getLogger(__name__)
 
 
-class InsightsStorage:
+class InsightsStorage(JsonStorageBase):
     """Stores deduplicated insights from diagnosis runs."""
 
     def __init__(self, storage_dir: str = "/config/automation_assistant"):
-        self.storage_dir = Path(storage_dir)
-        self.storage_file = self.storage_dir / "insights.json"
-        self._lock = asyncio.Lock()
-        self._ensure_storage_dir()
-
-    def _ensure_storage_dir(self) -> None:
-        """Ensure the storage directory exists."""
-        try:
-            self.storage_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning(f"Could not create storage directory: {e}")
-
-    def _load_data(self) -> dict[str, Any]:
-        """Load data from the JSON file."""
-        if not self.storage_file.exists():
-            return {"insights": []}
-        try:
-            with open(self.storage_file, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Failed to load insights storage file: {e}")
-            return {"insights": []}
-
-    def _save_data(self, data: dict[str, Any]) -> None:
-        """Save data to the JSON file."""
-        try:
-            self._ensure_storage_dir()
-            with open(self.storage_file, "w") as f:
-                json.dump(data, f, indent=2, default=str)
-        except IOError as e:
-            logger.error(f"Failed to save insights storage file: {e}")
-            raise
+        super().__init__(
+            storage_dir=storage_dir,
+            filename="insights.json",
+            default_data={"insights": []},
+        )
 
     def _generate_insight_id(self, insight: dict[str, Any]) -> str:
         """Generate unique ID for deduplication.
@@ -95,10 +67,16 @@ class InsightsStorage:
                     # Update existing insight's last_seen
                     existing_map[insight_id]["last_seen"] = now
                     # Also update title/description/recommendation if changed
-                    existing_map[insight_id]["title"] = insight.get("title", existing_map[insight_id]["title"])
-                    existing_map[insight_id]["description"] = insight.get("description", existing_map[insight_id]["description"])
-                    existing_map[insight_id]["recommendation"] = insight.get("recommendation", existing_map[insight_id]["recommendation"])
-                    logger.debug(f"Updated existing insight: {insight_id}")
+                    existing_map[insight_id]["title"] = insight.get(
+                        "title", existing_map[insight_id]["title"]
+                    )
+                    existing_map[insight_id]["description"] = insight.get(
+                        "description", existing_map[insight_id]["description"]
+                    )
+                    existing_map[insight_id]["recommendation"] = insight.get(
+                        "recommendation", existing_map[insight_id]["recommendation"]
+                    )
+                    logger.debug("Updated existing insight: %s", insight_id)
                 else:
                     # Add new insight
                     insight["first_seen"] = now
@@ -106,7 +84,7 @@ class InsightsStorage:
                     insight["resolved"] = False
                     existing_map[insight_id] = insight
                     new_count += 1
-                    logger.debug(f"Added new insight: {insight_id}")
+                    logger.debug("Added new insight: %s", insight_id)
 
             # Convert back to list, sorted by last_seen descending
             data["insights"] = sorted(
@@ -115,7 +93,11 @@ class InsightsStorage:
                 reverse=True,
             )
             self._save_data(data)
-            logger.info(f"Processed {len(insights)} insights, {new_count} new")
+            logger.info(
+                "Processed %s insights, %s new",
+                len(insights),
+                new_count,
+            )
             return new_count
 
     async def get_all(self, category: Optional[str] = None) -> list[dict[str, Any]]:
@@ -154,7 +136,9 @@ class InsightsStorage:
                 if insight.get("insight_id") == insight_id:
                     insight["resolved"] = resolved
                     self._save_data(data)
-                    logger.info(f"Marked insight {insight_id} as resolved={resolved}")
+                    logger.info(
+                        "Marked insight %s as resolved=%s", insight_id, resolved
+                    )
                     return True
             return False
 
@@ -167,7 +151,7 @@ class InsightsStorage:
             data["insights"] = [i for i in insights if i.get("insight_id") != insight_id]
             if len(data["insights"]) < original_length:
                 self._save_data(data)
-                logger.info(f"Deleted insight: {insight_id}")
+                logger.info("Deleted insight: %s", insight_id)
                 return True
             return False
 
@@ -181,7 +165,7 @@ class InsightsStorage:
             deleted_count = original_length - len(data["insights"])
             if deleted_count > 0:
                 self._save_data(data)
-                logger.info(f"Cleared {deleted_count} resolved insights")
+                logger.info("Cleared %s resolved insights", deleted_count)
             return deleted_count
 
 

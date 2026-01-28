@@ -15,12 +15,7 @@ interface DeleteModalProps {
   onConfirm: () => void
 }
 
-export function DeleteModal({
-  open,
-  onOpenChange,
-  automationName,
-  onConfirm,
-}: DeleteModalProps) {
+export function DeleteModal({ open, onOpenChange, automationName, onConfirm }: DeleteModalProps) {
   const handleDelete = () => {
     onConfirm()
     onOpenChange(false)
@@ -37,7 +32,12 @@ export function DeleteModal({
         </DialogHeader>
         <p className="text-sm text-muted-foreground">This cannot be undone.</p>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              onOpenChange(false)
+            }}
+          >
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleDelete}>

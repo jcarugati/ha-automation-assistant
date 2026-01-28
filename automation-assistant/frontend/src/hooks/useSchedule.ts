@@ -35,21 +35,24 @@ export function useSchedule(): UseScheduleReturn {
     }
   }, [])
 
-  const updateSchedule = useCallback(async (request: {
-    enabled?: boolean
-    time?: string
-    frequency?: ScheduleConfig['frequency']
-    day_of_week?: string
-    day_of_month?: number
-  }) => {
-    try {
-      const data = await apiUpdateSchedule(request)
-      setSchedule(data)
-    } catch (e) {
-      console.error('Failed to update schedule:', e)
-      throw e
-    }
-  }, [])
+  const updateSchedule = useCallback(
+    async (request: {
+      enabled?: boolean
+      time?: string
+      frequency?: ScheduleConfig['frequency']
+      day_of_week?: string
+      day_of_month?: number
+    }) => {
+      try {
+        const data = await apiUpdateSchedule(request)
+        setSchedule(data)
+      } catch (e) {
+        console.error('Failed to update schedule:', e)
+        throw e
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     void refresh()

@@ -17,7 +17,8 @@ function getStatusColor(automation: Automation, severity: InsightSeverity | null
 }
 
 function getTooltip(automation: Automation, severity: InsightSeverity | null): string {
-  const stateText = automation.state === 'on' ? 'Enabled' : automation.state === 'off' ? 'Disabled' : 'Unknown'
+  const stateText =
+    automation.state === 'on' ? 'Enabled' : automation.state === 'off' ? 'Disabled' : 'Unknown'
   let healthText = 'Healthy'
   if (automation.state === 'off') healthText = 'Disabled'
   else if (automation.state !== 'on') healthText = 'State unknown'
@@ -27,7 +28,8 @@ function getTooltip(automation: Automation, severity: InsightSeverity | null): s
 }
 
 export function AutomationItem({ automation, isSelected, severity, onClick }: AutomationItemProps) {
-  const stateText = automation.state === 'on' ? 'Enabled' : automation.state === 'off' ? 'Disabled' : 'Unknown'
+  const stateText =
+    automation.state === 'on' ? 'Enabled' : automation.state === 'off' ? 'Disabled' : 'Unknown'
 
   return (
     <button
@@ -35,9 +37,7 @@ export function AutomationItem({ automation, isSelected, severity, onClick }: Au
       title={getTooltip(automation, severity)}
       className={cn(
         'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors',
-        isSelected
-          ? 'bg-primary/10 text-primary'
-          : 'hover:bg-accent text-foreground'
+        isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-foreground'
       )}
     >
       <div

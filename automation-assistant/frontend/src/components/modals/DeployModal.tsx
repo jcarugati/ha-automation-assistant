@@ -20,13 +20,7 @@ interface DeployModalProps {
   onError: (message: string) => void
 }
 
-export function DeployModal({
-  open,
-  onOpenChange,
-  yaml,
-  onSuccess,
-  onError,
-}: DeployModalProps) {
+export function DeployModal({ open, onOpenChange, yaml, onSuccess, onError }: DeployModalProps) {
   const [automationId, setAutomationId] = useState('')
   const [deploying, setDeploying] = useState(false)
 
@@ -64,17 +58,24 @@ export function DeployModal({
             <label className="text-sm font-medium">Automation ID (optional)</label>
             <Input
               value={automationId}
-              onChange={(e) => setAutomationId(e.target.value)}
+              onChange={(e) => {
+                setAutomationId(e.target.value)
+              }}
               placeholder="Leave empty to use ID from YAML"
             />
           </div>
           <YamlDisplay value={yaml} className="max-h-[300px] overflow-y-auto" />
         </div>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              onOpenChange(false)
+            }}
+          >
             Cancel
           </Button>
-          <Button onClick={handleDeploy} disabled={deploying}>
+          <Button onClick={() => void handleDeploy()} disabled={deploying}>
             {deploying ? 'Deploying...' : 'Deploy'}
           </Button>
         </DialogFooter>
