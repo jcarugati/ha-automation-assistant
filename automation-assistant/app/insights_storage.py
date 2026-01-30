@@ -2,7 +2,8 @@
 
 import hashlib
 import logging
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from .storage_base import JsonStorageBase
@@ -13,12 +14,55 @@ logger = logging.getLogger(__name__)
 class InsightsStorage(JsonStorageBase):
     """Stores deduplicated insights from diagnosis runs."""
 
+    DEFAULT_STALE_DAYS = 14
+
     def __init__(self, storage_dir: str = "/config/automation_assistant"):
         super().__init__(
             storage_dir=storage_dir,
             filename="insights.json",
             default_data={"insights": []},
         )
+
+    def _get_stale_days(self) -> int:
+        """Return the configured staleness window in days (<=0 disables)."""
+        raw_value = os.environ.get("INSIGHTS_STALE_DAYS", "").strip()
+        if not raw_value:
+            return self.DEFAULT_STALE_DAYS
+        try:
+            return int(raw_value)
+        except ValueError:
+            logger.warning(
+                "Invalid INSIGHTS_STALE_DAYS value: %s, using default %s",
+                raw_value,
+                self.DEFAULT_STALE_DAYS,
+            )
+            return self.DEFAULT_STALE_DAYS
+
+    def _parse_iso_datetime(self, value: str | None) -> Optional[datetime]:
+        """Parse an ISO datetime string."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    def _is_stale(self, insight: dict[str, Any], now: datetime) -> bool:
+        """Return True if the insight is stale based on last_seen."""
+        stale_days = self._get_stale_days()
+        if stale_days <= 0:
+            return False
+        last_seen = self._parse_iso_datetime(insight.get("last_seen"))
+        if not last_seen:
+            last_seen = self._parse_iso_datetime(insight.get("first_seen"))
+        if not last_seen:
+            return False
+        return last_seen <= now - timedelta(days=stale_days)
+
+    def _prune_stale(self, insights: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove stale insights from the list."""
+        now = datetime.utcnow()
+        return [insight for insight in insights if not self._is_stale(insight, now)]
 
     def _generate_insight_id(self, insight: dict[str, Any]) -> str:
         """Generate unique ID for deduplication.
@@ -105,6 +149,11 @@ class InsightsStorage(JsonStorageBase):
         async with self._lock:
             data = self._load_data()
             insights = data.get("insights", [])
+            pruned = self._prune_stale(insights)
+            if len(pruned) != len(insights):
+                data["insights"] = pruned
+                self._save_data(data)
+            insights = pruned
 
             if category:
                 insights = [i for i in insights if i.get("category") == category]
@@ -124,7 +173,11 @@ class InsightsStorage(JsonStorageBase):
         async with self._lock:
             data = self._load_data()
             insights = data.get("insights", [])
-            return sum(1 for i in insights if not i.get("resolved", False))
+            pruned = self._prune_stale(insights)
+            if len(pruned) != len(insights):
+                data["insights"] = pruned
+                self._save_data(data)
+            return sum(1 for i in pruned if not i.get("resolved", False))
 
     async def mark_resolved(self, insight_id: str, resolved: bool = True) -> bool:
         """Mark an insight as resolved/unresolved."""
