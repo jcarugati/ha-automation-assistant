@@ -45,10 +45,12 @@ export function DetailView({
   } | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Update yaml when details change
-  if (details.yaml !== yaml && !saving && !modifyLoading) {
+  // Only sync yaml from details when the automation changes (different id)
+  // Don't overwrite user's edits when saving or modifying
+  useEffect(() => {
     setYaml(details.yaml)
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [details.automation.id])
 
   const automation = details.automation
   const unresolvedIssues = useMemo(() => issues.filter((issue) => !issue.resolved), [issues])
