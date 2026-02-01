@@ -53,6 +53,9 @@ docker run -p 8099:8099 automation-assistant
 
 ### Lint and Format
 - No lint/format tooling is configured. Match existing formatting and style.
+- After every change (frontend or backend), run the linters using the Make targets:
+  - `make lint` for frontend
+  - `make lint-python` for backend (or the specific backend linter targets)
 
 ### Testing
 - No automated tests exist yet.

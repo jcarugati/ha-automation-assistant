@@ -1,10 +1,15 @@
-# Claude Code configuration
-AGENT.md
-CLAUDE.md
-AGENTS.md
+# Python bytecode
+__pycache__/
+*.pyc
 
-# Local development
-run-local.sh
+# Virtualenv
+.venv/
+
+# Local env
 .env
-.examples/*
-automation-assistant/.env
+
+# Node
+node_modules/
+
+# Build outputs
+automation-assistant/app/static/dist/
