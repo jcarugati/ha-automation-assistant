@@ -89,7 +89,7 @@ app = FastAPI(
 static_path = Path(__file__).parent / "static"
 dist_path = static_path / "dist"
 
-# Mount dist assets under /api/static so they're accessible through ingress
+# Mount dist assets for the UI (relative paths use /assets)
 if dist_path.exists():
     app.mount("/api/static/assets", StaticFiles(directory=dist_path / "assets"), name="assets")
     # Also mount at root for backward compatibility (direct access)
