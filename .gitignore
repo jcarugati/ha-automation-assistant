@@ -11,5 +11,4 @@ __pycache__/
 # Node
 node_modules/
 
-# Build outputs
-automation-assistant/app/static/dist/
+# Build outputs are tracked (needed for Docker image)
